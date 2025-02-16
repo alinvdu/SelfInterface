@@ -107,7 +107,15 @@ function App() {
   const [memories, setMemories] = useState([]);
 
   // New state for hue and showing the slider.
-  const [hue, setHue] = useState(260);
+  const [hue, setHue] = useState(() => {
+    const storedHue = localStorage.getItem('hue');
+    return storedHue ? Number(storedHue) : 260;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('hue', hue);
+  }, [hue]);
+  
   const [showHueSlider, setShowHueSlider] = useState(false);
   const sliderRef = useRef(null);
 
@@ -386,7 +394,7 @@ function App() {
       )}
 
       {/* Memories Panel */}
-      <div style={{
+      {token && <div style={{
         position: 'absolute',
         top: '120px',
         left: '20px',
@@ -408,7 +416,7 @@ function App() {
           textAling: 'left',
           alignItems: 'flex-start'
         }}>
-          {token && (
+          {(
             <>
               <div style={{ marginTop: 0, fontSize: 21, marginBottom: 15 }}>Memories</div>
               {memories && memories.map((memory, i) => (
@@ -417,7 +425,7 @@ function App() {
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Right overlay: Recording controls and End Conversation */}
       <div style={{
@@ -439,20 +447,19 @@ function App() {
             disabled={isRecording || isPlaying || !sessionId}
             style={{ marginBottom: "0.5rem", ...dynamicButtonStyle }}
           >
-            {isRecording ? "Recording..." : "Start Recording"}
+            {isRecording ? "Recording..." : "Speak"}
           </button>
-          <br />
-          <button style={dynamicButtonStyle} onClick={() => {
+          <button style={{...dynamicButtonStyle, marginLeft: 10}} onClick={() => {
             if (isPlaying) {
               stopPlaying();
             } else {
               stopRecording();
             }
           }}>
-            {isPlaying ? "Stop Playing" : "Stop Recording"}
+            {isPlaying ? "Stop Atlas" : "Stop Recording"}
           </button>
         </div>
-        {isPlaying && <p style={{ margin: 0 }}>Playing response...</p>}
+        {isPlaying && <p style={{ margin: 0 }}>Atlas is speaking...</p>}
         {!isRecording && !isPlaying && <p style={{ margin: 0 }}>Ready to record</p>}
         {token && (
           <div style={{ marginTop: '1rem' }}>

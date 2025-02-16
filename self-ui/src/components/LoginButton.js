@@ -15,7 +15,10 @@ const LoginButton = ({ dynamicButtonStyle }) => {
           }} onClick={logout}>Log Out</button>
         </div>
       ) : (
-        <button onClick={signInWithGoogle}>Log In with Google</button>
+        <div>
+          <div>Power-up Atlas by Joining Now!</div>
+          <button style={{...dynamicButtonStyle, marginTop: 10}} onClick={signInWithGoogle}>Log In with Google</button>
+        </div>
       )}
     </div>
   );
