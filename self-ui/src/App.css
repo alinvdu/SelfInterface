@@ -1,9 +1,10 @@
 body {
-  background: black;
+  background-image: url('env4.jpg');
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .App {
-  background: black;
   color: white;
   text-align: center;
 }
