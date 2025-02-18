@@ -5,35 +5,27 @@ import { useAuth } from "./auth/AuthContext";
 
 // React Three Fiber imports
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 
 import { BiColorFill } from "react-icons/bi";
-
-import Model from './Model.js'
+import Model from './Model.js';
 
 const api = "https://silver-space-pancake-97w4jq55q9v2xxxg-8000.app.github.dev";
 
 // --- MemoryCard Component ---
-// This component shows a preview of the memory text with a border.
-// A small outlined tag displays the memory category.
-// Clicking the card toggles expansion.
 function MemoryCard({ memory, hue }) {
   const [expanded, setExpanded] = useState(false);
-  const previewLimit = 100; // preview limit (characters)
-
-  // If memory is a simple string, treat it as text with a default category.
+  const previewLimit = 100;
   const text = typeof memory === 'string' ? memory : memory.text;
   const category = typeof memory === 'string'
     ? 'General'
     : memory.category.split("_").join(" ") || 'General';
   const previewText = text.length > previewLimit ? text.slice(0, previewLimit) + '...' : text;
 
-  // Dynamic styles using the current hue value.
-  // Here, the memory box background is made darker by lowering the lightness.
   const cardStyle = {
     border: `1px solid hsl(${hue}, 40%, 40%)`,
     borderRadius: '3px',
-    backgroundColor: `hsl(${hue}, 40%, 20%)`, // Darker background
+    backgroundColor: `hsl(${hue}, 40%, 20%)`,
     fontSize: 14,
     padding: '8px',
     textAlign: 'left',
@@ -52,20 +44,11 @@ function MemoryCard({ memory, hue }) {
   };
 
   return (
-    <div style={{
-      marginBottom: '1rem',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'flex-start'
-    }}>
+    <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
       <div style={cardStyle} onClick={() => setExpanded(!expanded)}>
-        <div>
-          {expanded ? text : previewText}
-        </div>
+        <div>{expanded ? text : previewText}</div>
       </div>
-      <div style={tagStyle}>
-        {category}
-      </div>
+      <div style={tagStyle}>{category}</div>
     </div>
   );
 }
@@ -90,7 +73,6 @@ function BackgroundScene({ isPlaying }) {
       <ambientLight intensity={1.2} />
       <directionalLight position={[10, 10, 5]} intensity={2.0} />
       <pointLight position={[0, 5, 0]} intensity={2.0} />
-      <hemisphereLight intensity={1.2} skyColor="#f5efe7" groundColor="#444444" position={[0, 10, 0]} />
       <Suspense fallback={null}>
         <Model isPlaying={isPlaying} />
         <OrbitControls enableZoom={false} enableRotate={false} enablePan={false} />
@@ -102,42 +84,127 @@ function BackgroundScene({ isPlaying }) {
 function App() {
   const { token } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);          // For regular process_audio playback
+  const [isProactivePlaying, setIsProactivePlaying] = useState(false); // Proactive audio playback active
+  const [isProactiveLoading, setIsProactiveLoading] = useState(false); // Proactive API call pending
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);   // process_audio API call pending
   const [sessionId, setSessionId] = useState(null);
   const [memories, setMemories] = useState([]);
 
-  // New state for hue and showing the slider.
+  // Control button style: if disabled due to proactive loading, processing audio, etc.
+  const getControlButtonStyle = (baseStyle, allowIsPlaying = false) => {
+    if (isProactiveLoading || isProcessingAudio || (!allowIsPlaying && isPlaying) || isProactivePlaying) {
+      return {
+        ...baseStyle,
+        background: 'gray',
+        color: '#ccc',
+        opacity: 0.6,
+        cursor: 'not-allowed'
+      };
+    }
+    return baseStyle;
+  };
+
   const [hue, setHue] = useState(() => {
     const storedHue = localStorage.getItem('hue');
     return storedHue ? Number(storedHue) : 260;
   });
 
-  useEffect(() => {
-    localStorage.setItem('hue', hue);
-  }, [hue]);
-  
+  // Base dynamicButtonStyle remains fixed.
+  const dynamicButtonStyle = {
+    background: `hsl(${hue}, 40%, 30%)`,
+    border: `1px solid hsl(${hue}, 40%, 40%)`,
+    color: 'white',
+    borderRadius: '3px',
+    padding: '5px'
+  };
+
+  useEffect(() => { localStorage.setItem('hue', hue); }, [hue]);
+
   const [showHueSlider, setShowHueSlider] = useState(false);
   const sliderRef = useRef(null);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
-  const mediaSourceRef = useRef(null);
-  const readerRef = useRef(null);
 
+  // ----- Common Audio Playback Helpers -----
+  async function playAudioFromResponse(response, onPlay, onEnded) {
+    try {
+      const reader = response.body.getReader();
+      const chunks = [];
+      let done = false;
+      while (!done) {
+        const { value, done: readingDone } = await reader.read();
+        if (value) chunks.push(value);
+        done = readingDone;
+      }
+      const blob = new Blob(chunks, { type: "audio/mpeg" });
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      window.currentAudio = audio;
+      audio.onplaying = () => { if (onPlay) onPlay(); };
+      audio.onended = () => { if (onEnded) onEnded(); };
+      await audio.play();
+    } catch (error) {
+      console.error("Error in playAudioFromResponse:", error);
+    }
+  }
+
+  async function fetchAndPlayAudio(endpoint, options = {}, onPlay, onEnded) {
+    try {
+      const response = await fetch(endpoint, {
+        method: options.method || 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+        body: options.body,
+      });
+      if (!response.ok) throw new Error("Error fetching audio: " + response.statusText);
+      await playAudioFromResponse(response, onPlay, onEnded);
+    } catch (error) {
+      console.error("Error in fetchAndPlayAudio:", error);
+    }
+  }
+
+  async function fetchAndPlayProactiveMessage(endpoint) {
+    setIsProactiveLoading(true);
+    await fetchAndPlayAudio(
+      endpoint,
+      { method: 'POST' },
+      () => {
+        // When audio starts playing:
+        setIsProactiveLoading(false);
+        setIsProactivePlaying(true);
+      },
+      () => {
+        // When proactive audio ends:
+        setIsProactivePlaying(false);
+      }
+    );
+  }
+  // ----- End of Audio Playback Helpers -----
+
+  // Combined new_session and proactive message call.
   useEffect(() => {
-    const createSession = async () => {
-      try {
-        const res = await fetch(api + "/new_session", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        setSessionId(data.session_id);
-      } catch (error) {
-        console.error("Error creating new session:", error);
+    const createSessionAndProactive = async () => {
+      if (token && !sessionId) {
+        try {
+          const res = await fetch(api + "/new_session", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          setSessionId(data.session_id);
+          // Now that session is created and SYSTEM_PROMPT is set, call proactive message.
+          await fetchAndPlayProactiveMessage(api + `/proactive_message?session_id=${data.session_id}`);
+        } catch (error) {
+          console.error("Error creating session and proactive message:", error);
+        }
       }
     };
+    createSessionAndProactive();
+  }, [token, sessionId]);
 
+  // Fetch memories (this can remain separate)
+  useEffect(() => {
     const fetchMemories = async () => {
       try {
         const res = await fetch(api + "/retrieve_memories", {
@@ -149,14 +216,9 @@ function App() {
         console.error("Error fetching memories:", error);
       }
     };
-
-    createSession();
-    if (token) {
-      fetchMemories();
-    }
+    if (token) fetchMemories();
   }, [token]);
 
-  // Close the hue slider when clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (sliderRef.current && !sliderRef.current.contains(event.target)) {
@@ -168,96 +230,53 @@ function App() {
     } else {
       document.removeEventListener("mousedown", handleClickOutside);
     }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showHueSlider]);
 
   const startRecording = async () => {
+    if (isProactiveLoading || isProactivePlaying || isProcessingAudio) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
-
       mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
-
       mediaRecorder.onstop = async () => {
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
           streamRef.current = null;
         }
-
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/mp3" });
         audioChunksRef.current = [];
         const formData = new FormData();
         formData.append("file", audioBlob, "recording.mp3");
-
         try {
+          setIsProcessingAudio(true);
           const response = await fetch(api + `/process_audio?tts=true&session_id=${sessionId}`, {
             method: "POST",
             body: formData,
             headers: { Authorization: `Bearer ${token}` },
           });
-          if (!response.ok) {
-            throw new Error("Server error: " + response.statusText);
-          }
-
-          mediaSourceRef.current = new MediaSource();
-          const audioElement = new Audio();
-          audioElement.src = URL.createObjectURL(mediaSourceRef.current);
-          document.body.appendChild(audioElement);
-          setIsPlaying(true);
-          audioElement.play();
-
-          mediaSourceRef.current.addEventListener("sourceopen", async () => {
-            const sourceBuffer = mediaSourceRef.current.addSourceBuffer("audio/mpeg");
-            const reader = response.body.getReader();
-            readerRef.current = reader;
-
-            async function pushData() {
-              const { done, value } = await reader.read();
-              if (done) {
-                if (mediaSourceRef.current.readyState === "open") {
-                  try {
-                    mediaSourceRef.current.endOfStream();
-                  } catch (error) {
-                    console.log("Error ending stream", error);
-                  }
-                }
-                return;
-              }
-              sourceBuffer.addEventListener("updateend", function onUpdateEnd() {
-                sourceBuffer.removeEventListener("updateend", onUpdateEnd);
-                pushData();
-              });
-              try {
-                sourceBuffer.appendBuffer(value);
-              } catch (err) {
-                console.error("Error appending buffer", err);
-              }
-            }
-            pushData();
-
-            audioElement.onended = () => {
-              setIsPlaying(false);
-              setIsRecording(false);
-            };
-          });
-
-          window.currentAudio = audioElement;
+          if (!response.ok) throw new Error("Server error: " + response.statusText);
+          await playAudioFromResponse(response,
+            () => { 
+              setIsProcessingAudio(false); 
+              setIsPlaying(true); 
+            },
+            () => { setIsPlaying(false); }
+          );
         } catch (error) {
           console.error("Error sending audio:", error);
           setIsRecording(false);
           setIsPlaying(false);
+          setIsProcessingAudio(false);
         }
       };
-
       mediaRecorder.start();
       setIsRecording(true);
     } catch (error) {
@@ -267,9 +286,6 @@ function App() {
 
   const stopPlaying = () => {
     if (window.currentAudio) {
-      if (readerRef.current) {
-        readerRef.current.cancel();
-      }
       window.currentAudio.pause();
       window.currentAudio.currentTime = 0;
       window.currentAudio.src = "";
@@ -301,22 +317,21 @@ function App() {
     }
   };
 
-  // Define dynamic style for buttons using the current hue.
-  const dynamicButtonStyle = {
-    background: `hsl(${hue}, 40%, 30%)`,
-    border: `1px solid hsl(${hue}, 40%, 40%)`,
-    color: 'white',
-    appearance: 'none',
-    borderRadius: '3px',
-    padding: '5px'
-  };
+  // Status text: show "Atlas is thinking..." if proactive loading or process_audio is pending,
+  // "Atlas is speaking..." if audio is playing, otherwise "Ready to record".
+  const statusText = (isProactiveLoading || isProcessingAudio)
+    ? "Atlas is thinking..."
+    : (isProactivePlaying || isPlaying)
+      ? "Atlas is speaking..."
+      : "Ready to record";
+
+  // Fixed panel background.
+  const panelBackground = 'rgba(0, 0, 0, 0.6)';
 
   return (
     <div className="App" style={{ position: "relative", background: "transparent", height: "100vh" }}>
-      {/* 3D background scene */}
-      <BackgroundScene isPlaying={isPlaying} />
+      <BackgroundScene isPlaying={isPlaying || isProactivePlaying} />
 
-      {/* Psychologist Name Box (Atlas) */}
       <div style={{
         position: 'absolute',
         top: '18%',
@@ -333,7 +348,6 @@ function App() {
         Atlas
       </div>
 
-      {/* Login Panel */}
       <div style={{
         position: 'absolute',
         top: '20px',
@@ -347,7 +361,6 @@ function App() {
         <LoginButton dynamicButtonStyle={dynamicButtonStyle} />
       </div>
 
-      {/* Hue Button on top right */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -358,19 +371,16 @@ function App() {
         background: `hsl(${hue}, 40%, 30%)`,
         border: `1px solid hsl(${hue}, 40%, 40%)`,
         color: 'white',
-        appearance: 'none',
         borderRadius: '3px',
-        padding: '5px',
-        cursor: 'pointer',
-        padding: 12
+        padding: '12px',
+        cursor: 'pointer'
       }}>
         <BiColorFill size={23} />
-        <button style={{background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', fontSize: 16}} onClick={() => setShowHueSlider(!showHueSlider)}>
+        <button style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', fontSize: 16 }} onClick={() => setShowHueSlider(!showHueSlider)}>
           Pick Color
         </button>
       </div>
 
-      {/* Hue Slider Panel */}
       {showHueSlider && (
         <div ref={sliderRef} style={{
           position: 'absolute',
@@ -383,17 +393,10 @@ function App() {
           color: 'white'
         }}>
           <div style={{ marginBottom: '5px' }}>Color</div>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            value={hue}
-            onChange={(e) => setHue(e.target.value)}
-          />
+          <input type="range" min="0" max="360" value={hue} onChange={(e) => setHue(e.target.value)} />
         </div>
       )}
 
-      {/* Memories Panel */}
       {token && <div style={{
         position: 'absolute',
         top: '120px',
@@ -413,28 +416,24 @@ function App() {
           color: 'white',
           display: 'flex',
           flexDirection: 'column',
-          textAling: 'left',
           alignItems: 'flex-start'
         }}>
-          {(
-            <>
-              <div style={{ marginTop: 0, fontSize: 21, marginBottom: 15 }}>Memories</div>
-              {memories && memories.map((memory, i) => (
-                <MemoryCard key={i} memory={memory} hue={hue} />
-              ))}
-            </>
-          )}
+          <>
+            <div style={{ marginTop: 0, fontSize: 21, marginBottom: 15 }}>Memories</div>
+            {memories && memories.map((memory, i) => (
+              <MemoryCard key={i} memory={memory} hue={hue} />
+            ))}
+          </>
         </div>
       </div>}
 
-      {/* Right overlay: Recording controls and End Conversation */}
       <div style={{
         position: 'absolute',
         top: '50%',
         right: '20px',
         transform: 'translateY(-50%)',
         zIndex: 2,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: panelBackground,
         borderRadius: '4px',
         color: 'white',
         textAlign: 'center',
@@ -444,26 +443,23 @@ function App() {
         <div style={{ marginBottom: "1rem" }}>
           <button 
             onClick={startRecording} 
-            disabled={isRecording || isPlaying || !sessionId}
-            style={{ marginBottom: "0.5rem", ...dynamicButtonStyle }}
+            disabled={isRecording || isPlaying || isProactivePlaying || isProactiveLoading || isProcessingAudio || !sessionId}
+            style={{ marginBottom: "0.5rem", ...getControlButtonStyle(dynamicButtonStyle) }}
           >
             {isRecording ? "Recording..." : "Speak"}
           </button>
-          <button style={{...dynamicButtonStyle, marginLeft: 10}} onClick={() => {
-            if (isPlaying) {
-              stopPlaying();
-            } else {
-              stopRecording();
-            }
-          }}>
+          <button 
+            style={{ ...getControlButtonStyle(dynamicButtonStyle, true), marginLeft: 10 }} 
+            onClick={() => { isPlaying ? stopPlaying() : stopRecording(); }}
+            disabled={isProactivePlaying || isProactiveLoading || isProcessingAudio}
+          >
             {isPlaying ? "Stop Atlas" : "Stop Recording"}
           </button>
         </div>
-        {isPlaying && <p style={{ margin: 0 }}>Atlas is speaking...</p>}
-        {!isRecording && !isPlaying && <p style={{ margin: 0 }}>Ready to record</p>}
+        <p style={{ margin: 0 }}>{statusText}</p>
         {token && (
           <div style={{ marginTop: '1rem' }}>
-            <button style={dynamicButtonStyle} onClick={finalizeConversation}>
+            <button style={getControlButtonStyle(dynamicButtonStyle)} onClick={finalizeConversation} disabled={isProactivePlaying || isProactiveLoading || isProcessingAudio}>
               End Conversation
             </button>
           </div>

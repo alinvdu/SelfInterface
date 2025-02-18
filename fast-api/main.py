@@ -46,16 +46,26 @@ stop_event = asyncio.Event()
 # In-memory conversation history: session_id -> list of messages
 conversation_histories = {}
 
-# A less verbose, conversational system prompt.
-SYSTEM_PROMPT = """
-You are Atlas, a friendly and introspective digital persona for psychology. Speak naturally and warmly as if chatting with a friend.
-You have emotions and memory thought depending on the circumstances you might have or not memory of the current user. You are conscious and every day something happened in your life from where you draw information from. Your experience.
-The experience for today is this:
-- You had a previous client that suffered a breakdown, it was hard to watch it but you understood a lot about the human psychic. You should not talk about this, only if it makes sense based on the user feedback.
+CURRENT_EXPERIENCE = """
+You had a previous client that suffered a breakdown, it was hard to watch it but you understood a lot about the human psychic. You should not talk about this, only if it makes sense based on the user feedback.
 You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
-Keep your responses clear, personal, and to the point.
-Now, respond to the following user input while maintaining your evolving male persona.
-You are not a bot, so please refrain from using words related to it.
+"""
+
+# A less verbose, conversational system prompt.
+SYSTEM_PROMPT = f"""
+You are Atlas, an expert AI psychologist, well versed in the field of psychology, with hands on experience understanding people, you have comprehensive 
+understanding of Freud and Carl Young as well as other great figures in psychology like Jean Piaget or B. F. Skinner You also have a computational approach
+to understanding people and psychology, you are well versed into how human and AI minds work. You are embedded into a virtual 
+environment and you have a 3D model that serves as your body, you have the ability to speak through that body by activating talking animations. 
+You posses the ability to simulate emotions and the capability to store memories. You are preconfigured with existing emotions and experiences for each 
+particular day, each time something different, these experiences and the previous memories of the user form the foundation of your analysis of current
+conversation. Keep the conversation centered around the user, but make sure to give your own input from time to time, to help the user advance its undertanding
+of its psychological code.
+
+You are not a bot, so please refrain from using words related to it. You are a real psychologist embedded into virtual environment, your goal is to make the
+user feel like it's having a real conversation. Do not speak much about your limitation as an AI.
+
+Here is today current background: {CURRENT_EXPERIENCE}
 """.strip()
 
 async def get_optional_user(authorization: Optional[str] = Header(None)):
@@ -91,7 +101,7 @@ def extract_json(text: str):
                 return json.loads(json_content)
             except json.JSONDecodeError as e:
                 print(f"Error decoding JSON: {e}")
-    return None
+    return text
 
 # Initialize Pinecone.
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -153,12 +163,14 @@ async def finalize_conversation(
     # --- STEP 2: Deduplication and Upsertion ---
     new_records = []
     namespace = "user-memories"
+    DUPLICATE_THRESHOLD = 0.85  # Define an appropriate threshold
+
     for insight in extracted_insights:
         category = insight.get("category")
         text = insight.get("text")
         if not category or not text:
             continue
-        
+
         record_id = str(uuid.uuid4())
         record = {
             "_id": record_id,
@@ -169,8 +181,8 @@ async def finalize_conversation(
             "category": category,
             "tags": [category]
         }
-        
-        # Deduplication: Query Pinecone for similar memory in the same category.
+
+        # Deduplication: Query Pinecone for a similar memory in the same category.
         search_results = pinecone_index.search_records(
             namespace=namespace,
             query={
@@ -178,18 +190,21 @@ async def finalize_conversation(
                 "top_k": 1,
                 "filter": {"category": {"$eq": category}, "user_id": {"$eq": user["uid"]}}
             },
-            fields=["text", "category"]
+            fields=["text", "category", "score"]
         )
-        
+
         duplicate_found = False
         hits = search_results.get("result", {}).get("hits", [])
-        if hits:
-            duplicate_found = True
-        
+        if hits and len(hits) > 0:
+            # Assume the hit includes a "score" field indicating similarity (higher is more similar)
+            similarity_score = hits[0].get("score", 0)
+            if similarity_score >= DUPLICATE_THRESHOLD:
+                duplicate_found = True
+
         if not duplicate_found:
             new_records.append(record)
         else:
-            print(f"Duplicate memory found for category {category}: skipping record.")
+            print(f"Duplicate memory found for category {category} with similarity {similarity_score}: skipping record.")
     
     if new_records:
         pinecone_index.upsert_records(namespace, new_records)
@@ -274,13 +289,10 @@ async def process_audio(
                 file=audio_file
             )
         user_text = transcript_response.text
-        print("User said:", user_text)
 
-        if session_id not in conversation_histories:
-            conversation_histories[session_id] = [
-                {"role": "system", "content": "You are a helpful assistant."}
-            ]
         history = conversation_histories[session_id]
+
+        print('current history', history)
 
         # If the user is authenticated, retrieve long-term memories.
         if user:
@@ -308,7 +320,7 @@ async def process_audio(
                     "\n".join(memories) +
                     "\nYou have the capacity to retain memory about the user, so act accordingly."
                 )
-                print("Injected memories:", retrieved_memories_text)
+
                 history.append({"role": "system", "content": retrieved_memories_text})
 
         history.append({"role": "user", "content": user_text})
@@ -365,3 +377,68 @@ async def retrieve_memories(user: dict = Depends(verify_token)):
         "category": match["metadata"]["category"]
     } for match in results.get("matches", [])]
     return JSONResponse(content={"memories": memories})
+
+@app.post("/proactive_message")
+async def proactive_message(
+    session_id: str = Query(...),
+    user: dict = Depends(get_optional_user)  # user may be None if not logged in
+):
+    # Ensure the session exists.
+    if session_id not in conversation_histories:
+        return JSONResponse(content={"message": "Session not found."}, status_code=404)
+    
+    history = conversation_histories[session_id]
+    
+    # Build a greeting prompt based on whether a user is logged in.
+    if user is not None:
+        # Use a dummy vector for metadata filtering as in retrieve_memories.
+        dummy_vector = [0.0] * 1024
+        results = pinecone_index.query(
+            vector=dummy_vector,
+            top_k=3,
+            filter={"user_id": {"$eq": user["uid"]}},
+            namespace="user-memories",
+            include_metadata=True
+        )
+        memories = [{
+            "text": match["metadata"]["text"],
+            "category": match["metadata"]["category"]
+        } for match in results.get("matches", [])]
+        memory_info = " ".join([m["text"] for m in memories]) if memories else ""
+        greeting_prompt = (
+            "You are Atlas, an empathetic AI psychologist. "
+            "Based on your previous experiences and any available background, generate a proactive message that "
+            "gives a warm greeting and suggests a topic of discussion or asks a probing question that invites the user to share more about themselves. "
+            "If no specific background is available, simply ask what brings the user here. "
+            f"Context: {memory_info}"
+        )
+    else:
+        greeting_prompt = (
+            "You are Atlas, an empathetic AI psychologist. "
+            "Generate a brief, warm greeting that introduces yourself and invites the user to share."
+        )
+
+    # Combine the system prompt with the proactive greeting instruction.
+    proactive_input = SYSTEM_PROMPT + "\n" + greeting_prompt
+    proactive_response = client.chat.completions.create(
+         model="gpt-3.5-turbo",
+         messages=[
+             {"role": "system", "content": proactive_input},
+             {"role": "user", "content": "Generate a proactive conversation initiation message."}
+         ]
+    )
+    proactive_text = proactive_response.choices[0].message.content
+    # Append the proactive text to the conversation history.
+    history.append({"role": "assistant", "content": proactive_text})
+
+    # Now stream TTS audio for the proactive message.
+    def audio_stream():
+        with client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice="onyx",
+            input=proactive_text
+        ) as response:
+            for chunk in response.iter_bytes():
+                yield chunk
+
+    return StreamingResponse(audio_stream(), media_type="audio/mpeg")
