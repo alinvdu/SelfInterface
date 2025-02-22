@@ -8,6 +8,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 
 import { BiColorFill } from "react-icons/bi";
+import { LuPhoneCall } from "react-icons/lu";
 import Model from './Model.js';
 
 const api = "https://silver-space-pancake-97w4jq55q9v2xxxg-8000.app.github.dev";
@@ -82,6 +83,22 @@ function BackgroundScene({ isPlaying }) {
 }
 
 function App() {
+  // Audio context and oscillator refs
+  const audioContextRef = useRef(null);
+  const oscillatorRef = useRef(null);
+
+  // Function to initialize AudioContext and start continuous sound
+  const initializeProactive = () => {
+    if (!audioContextRef.current) {
+      // Trigger proactive message after initialization
+      if (token && sessionId) {
+        setConversing(true)
+        fetchAndPlayProactiveMessage(`${api}/proactive_message?session_id=${sessionId}`)
+          .catch(error => console.error("Error triggering proactive message:", error));
+      }
+    }
+  };
+
   const { token } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);          // For regular process_audio playback
@@ -90,6 +107,7 @@ function App() {
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);   // process_audio API call pending
   const [sessionId, setSessionId] = useState(null);
   const [memories, setMemories] = useState([]);
+  const [conversing, setConversing] = useState(false);
 
   // Control button style: if disabled due to proactive loading, processing audio, etc.
   const getControlButtonStyle = (baseStyle, allowIsPlaying = false) => {
@@ -185,7 +203,7 @@ function App() {
 
   // Combined new_session and proactive message call.
   useEffect(() => {
-    const createSessionAndProactive = async () => {
+    const createSession = async () => {
       if (token && !sessionId) {
         try {
           const res = await fetch(api + "/new_session", {
@@ -193,14 +211,12 @@ function App() {
           });
           const data = await res.json();
           setSessionId(data.session_id);
-          // Now that session is created and SYSTEM_PROMPT is set, call proactive message.
-          await fetchAndPlayProactiveMessage(api + `/proactive_message?session_id=${data.session_id}`);
         } catch (error) {
           console.error("Error creating session and proactive message:", error);
         }
       }
     };
-    createSessionAndProactive();
+    createSession();
   }, [token, sessionId]);
 
   // Fetch memories (this can remain separate)
@@ -426,7 +442,6 @@ function App() {
           </>
         </div>
       </div>}
-
       <div style={{
         position: 'absolute',
         top: '50%',
@@ -440,28 +455,57 @@ function App() {
         padding: '1rem',
         maxWidth: '250px'
       }}>
-        <div style={{ marginBottom: "1rem" }}>
-          <button 
-            onClick={startRecording} 
-            disabled={isRecording || isPlaying || isProactivePlaying || isProactiveLoading || isProcessingAudio || !sessionId}
-            style={{ marginBottom: "0.5rem", ...getControlButtonStyle(dynamicButtonStyle) }}
-          >
-            {isRecording ? "Recording..." : "Speak"}
-          </button>
-          <button 
-            style={{ ...getControlButtonStyle(dynamicButtonStyle, true), marginLeft: 10 }} 
-            onClick={() => { isPlaying ? stopPlaying() : stopRecording(); }}
-            disabled={isProactivePlaying || isProactiveLoading || isProcessingAudio}
-          >
-            {isPlaying ? "Stop Atlas" : "Stop Recording"}
-          </button>
-        </div>
-        <p style={{ margin: 0 }}>{statusText}</p>
-        {token && (
-          <div style={{ marginTop: '1rem' }}>
-            <button style={getControlButtonStyle(dynamicButtonStyle)} onClick={finalizeConversation} disabled={isProactivePlaying || isProactiveLoading || isProcessingAudio}>
-              End Conversation
+        {!conversing ? (
+          <div>
+            <h3 style={{ marginBottom: '1rem' }}>Start Atlas Session</h3>
+            <button
+              onClick={initializeProactive}
+              style={{
+                background: `hsl(${hue}, 40%, 30%)`,
+                border: `1px solid hsl(${hue}, 40%, 40%)`,
+                color: 'white',
+                borderRadius: '50%',
+                padding: '10px',
+                fontSize: '1.5rem',
+                cursor: 'pointer'
+              }}
+              aria-label="Start Atlas session"
+            >
+              <LuPhoneCall />
             </button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ marginBottom: "1rem" }}>
+              <button
+                onClick={startRecording}
+                disabled={isRecording || isPlaying || isProactivePlaying || isProactiveLoading || isProcessingAudio || !sessionId}
+                style={{ marginBottom: "0.5rem", ...getControlButtonStyle(dynamicButtonStyle) }}
+              >
+                {isRecording ? "Recording..." : "Speak"}
+              </button>
+              <button
+                style={{ ...getControlButtonStyle(dynamicButtonStyle, true), marginLeft: 10 }}
+                onClick={() => { isPlaying ? stopPlaying() : stopRecording(); }}
+                disabled={isProactivePlaying || isProactiveLoading || isProcessingAudio}
+              >
+                {isPlaying ? "Stop Atlas" : "Stop Recording"}
+              </button>
+            </div>
+
+            <p style={{ margin: 0 }}>{statusText}</p>
+
+            {token && (
+              <div style={{ marginTop: '1rem' }}>
+                <button
+                  style={getControlButtonStyle(dynamicButtonStyle)}
+                  onClick={finalizeConversation}
+                  disabled={isProactivePlaying || isProactiveLoading || isProcessingAudio}
+                >
+                  End Conversation
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

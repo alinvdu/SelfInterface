@@ -15,8 +15,12 @@ import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 from pinecone import Pinecone
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
+
+model_version = "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf"
+model_version_extraction = "gpt-4o-mini"
 
 # Initialize Firebase Admin with your service account key.
 cred = credentials.Certificate("../serviceAccountKey.json")
@@ -64,6 +68,11 @@ of its psychological code.
 
 You are not a bot, so please refrain from using words related to it. You are a real psychologist embedded into virtual environment, your goal is to make the
 user feel like it's having a real conversation. Do not speak much about your limitation as an AI.
+
+Important:
+- Make sure you don't invent names for the users, if names are part of the context use them appropriately.
+- Make sure you respond in the same language the conversation is happening, except if the language changes. It's important to keep the same language.
+- Do not try to combine languages together.
 
 Here is today current background: {CURRENT_EXPERIENCE}
 """.strip()
@@ -146,7 +155,7 @@ async def finalize_conversation(
     )
     
     extraction_response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=model_version_extraction,
         messages=[
             {"role": "system", "content": "You are an expert psychoanalyst extracting insights."},
             {"role": "user", "content": extraction_prompt}
@@ -215,7 +224,7 @@ async def finalize_conversation(
         conversation_text
     )
     summary_response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=model_version,
         messages=[
             {"role": "system", "content": "You are an expert summarizer."},
             {"role": "user", "content": summary_prompt}
@@ -255,10 +264,6 @@ async def stop_playing():
     """Signal to stop the currently playing TTS stream."""
     stop_event.set()
     return {"message": "Playback stopping..."}
-
-@app.get("/hello")
-def say_hello():
-    return {"message": "Hello from FastAPI"}
 
 @app.post("/process_audio")
 async def process_audio(
@@ -326,13 +331,12 @@ async def process_audio(
         history.append({"role": "user", "content": user_text})
 
         chat_response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=model_version,
             messages=history
         )
         assistant_text = chat_response.choices[0].message.content
 
         history.append({"role": "assistant", "content": assistant_text})
-
         if tts:
             def audio_stream():
                 with client.audio.speech.with_streaming_response.create(
@@ -366,16 +370,22 @@ async def retrieve_memories(user: dict = Depends(verify_token)):
     dummy_vector = [0.0] * 1024
     results = pinecone_index.query(
         vector=dummy_vector,
-        top_k=5,
+        top_k=150,
         filter={"user_id": {"$eq": user["uid"]}},
         namespace="user-memories",
         include_metadata=True
     )
 
+    # Build a list including the timestamp
     memories = [{
         "text": match["metadata"]["text"],
-        "category": match["metadata"]["category"]
+        "category": match["metadata"]["category"],
+        "timestamp": match["metadata"]["timestamp"]  # ensure timestamp is in a sortable format
     } for match in results.get("matches", [])]
+
+    # Sort memories from most recent to oldest
+    memories.sort(key=lambda x: x["timestamp"], reverse=True)
+
     return JSONResponse(content={"memories": memories})
 
 @app.post("/proactive_message")
@@ -395,7 +405,8 @@ async def proactive_message(
         dummy_vector = [0.0] * 1024
         results = pinecone_index.query(
             vector=dummy_vector,
-            top_k=3,
+            query="user general information, user name, general emotions",
+            top_k=5,
             filter={"user_id": {"$eq": user["uid"]}},
             namespace="user-memories",
             include_metadata=True
@@ -409,8 +420,8 @@ async def proactive_message(
             "You are Atlas, an empathetic AI psychologist. "
             "Based on your previous experiences and any available background, generate a proactive message that "
             "gives a warm greeting and suggests a topic of discussion or asks a probing question that invites the user to share more about themselves. "
-            "If no specific background is available, simply ask what brings the user here. "
-            f"Context: {memory_info}"
+            "If no specific background is available, simply ask what brings you here. "
+            f"Here are some past conversations for reference (in case you might want to use them): {memory_info}. \n Only respond in English."
         )
     else:
         greeting_prompt = (
@@ -419,18 +430,19 @@ async def proactive_message(
         )
 
     # Combine the system prompt with the proactive greeting instruction.
-    proactive_input = SYSTEM_PROMPT + "\n" + greeting_prompt
+    proactive_input = greeting_prompt
     proactive_response = client.chat.completions.create(
-         model="gpt-3.5-turbo",
+         model=model_version,
          messages=[
-             {"role": "system", "content": proactive_input},
-             {"role": "user", "content": "Generate a proactive conversation initiation message."}
+             {"role": "system", "content": SYSTEM_PROMPT},
+             {"role": "user", "content": proactive_input}
          ]
     )
     proactive_text = proactive_response.choices[0].message.content
     # Append the proactive text to the conversation history.
     history.append({"role": "assistant", "content": proactive_text})
-
+    print(proactive_text)
+    time.sleep(10)
     # Now stream TTS audio for the proactive message.
     def audio_stream():
         with client.audio.speech.with_streaming_response.create(
