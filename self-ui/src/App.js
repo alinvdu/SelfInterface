@@ -85,7 +85,6 @@ function BackgroundScene({ isPlaying }) {
 function App() {
   // Audio context and oscillator refs
   const audioContextRef = useRef(null);
-  const oscillatorRef = useRef(null);
 
   // Function to initialize AudioContext and start continuous sound
   const initializeProactive = () => {
@@ -99,6 +98,106 @@ function App() {
     }
   };
 
+  const peerConnectionRef = useRef(null);
+  const wsRef = useRef(null); // WebSocket for signaling
+
+  // Initialize WebRTC connection
+  const initiateWebRTC = async () => {
+    try {
+      // 1) Get local microphone track.
+      const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      peerConnectionRef.current = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+  
+      // 2) Add the microphone track(s) to the connection
+      // localStream.getTracks().forEach(track => {
+      //   console.log("Adding local mic track:", track);
+      //   peerConnectionRef.current.addTrack(track, localStream);
+      // });
+  
+      // WebSocket for signaling
+      const wsUrl = api.replace('https', 'wss').replace('http', 'ws') + '/ws';
+      wsRef.current = new WebSocket(wsUrl);
+  
+      wsRef.current.onopen = async () => {
+        console.log('WebSocket opened');
+        setIsConnected(true);
+
+        // Now that the WebSocket is open, create the offer
+        const offer = await peerConnectionRef.current.createOffer({ offerToReceiveAudio: true });
+        await peerConnectionRef.current.setLocalDescription(offer);
+  
+        // 4) Send the offer to the server
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'offer',
+            sdp: offer.sdp,
+            sessionId,
+            token
+          }));
+        }
+      };
+  
+      // 5) When we get the answer, set it as remote description
+      wsRef.current.onmessage = async (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'answer') {
+          console.log("Received answer from server");
+          await peerConnectionRef.current.setRemoteDescription(
+            new RTCSessionDescription({ type: 'answer', sdp: message.sdp })
+          );
+          console.log("Client SDP:", peerConnectionRef.current.remoteDescription.sdp);
+        } else if (message.type === 'ice-candidate') {
+          console.log('ice candidate received')
+          await peerConnectionRef.current.addIceCandidate(
+            new RTCIceCandidate(message.candidate)
+          );
+        }
+      };
+  
+      // 7) Handle sending our local ICE candidates up to the server
+      peerConnectionRef.current.onicecandidate = (event) => {
+        console.log('ice event', event)
+        if (event.candidate) {
+          wsRef.current.send(JSON.stringify({
+            type: 'ice-candidate',
+            candidate: event.candidate,
+            sessionId
+          }));
+        }
+      };
+  
+      // 8) This is where we receive the **remote** TTS track
+      peerConnectionRef.current.ontrack = (event) => {
+        console.log("ontrack event with remote track(s):", event.streams[0].getTracks());
+        console.log("tracks right now", peerConnectionRef.current.getReceivers())
+        // We create an audio element and attach the remote stream
+        const audio = new Audio();
+        audio.srcObject = event.streams[0];
+        audio.muted = false;
+        audio.volume = 1;
+        audio.controls = true; // for debugging
+        audio.autoplay = true;
+  
+        audio.onplaying = () => {
+          console.log('Playing remote TTS track');
+          setIsPlaying(true);
+        };
+        audio.onended = () => {
+          console.log('Remote TTS track ended');
+          setIsPlaying(false);
+        };
+  
+        document.body.appendChild(audio);
+        audio.play().catch(e => console.error("Audio play failed:", e));
+      };
+  
+    } catch (error) {
+      console.error('Error initiating WebRTC:', error);
+    }
+  };
+
   const { token } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);          // For regular process_audio playback
@@ -108,6 +207,7 @@ function App() {
   const [sessionId, setSessionId] = useState(null);
   const [memories, setMemories] = useState([]);
   const [conversing, setConversing] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   // Control button style: if disabled due to proactive loading, processing audio, etc.
   const getControlButtonStyle = (baseStyle, allowIsPlaying = false) => {
@@ -459,7 +559,7 @@ function App() {
           <div>
             <h3 style={{ marginBottom: '1rem' }}>Start Atlas Session</h3>
             <button
-              onClick={initializeProactive}
+              onClick={initiateWebRTC}
               style={{
                 background: `hsl(${hue}, 40%, 30%)`,
                 border: `1px solid hsl(${hue}, 40%, 40%)`,
