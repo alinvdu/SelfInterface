@@ -87,10 +87,6 @@ class FFmpegAudioTrack(MediaStreamTrack):
         self.frame_pts = 0
         self._ended = False
 
-        # --- NEW: We'll store a "start time" to enforce a 7-second cutoff
-        self.start_time = time.time()
-        self.max_duration = 3.0  # seconds
-
         # Launch FFmpeg to decode MP3 (from stdin) to raw PCM (s16le, mono, 48000 Hz)
         self.ffmpeg = subprocess.Popen(
             [
@@ -147,17 +143,6 @@ class FFmpegAudioTrack(MediaStreamTrack):
 
         with open("debug-decoded.pcm", "wb") as debug_pcm:
             while True:
-                # --- NEW: If we've exceeded max_duration, break immediately
-                if time.time() - self.start_time >= self.max_duration:
-                    print("Reached 7-second cutoff, stopping FFmpeg.")
-                    # Attempt to terminate FFmpeg
-                    try:
-                        print('terminated')
-                        self.ffmpeg.terminate()
-                    except:
-                        pass
-                    break
-
                 data = self.ffmpeg.stdout.read(frame_size)
                 if not data:  # EOF reached or FFmpeg ended
                     print("End of FFmpeg output reached")
@@ -171,10 +156,10 @@ class FFmpegAudioTrack(MediaStreamTrack):
                 try:
                     samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
                     frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+                    frame.sample_rate = 48000  # Set the sample rate explicitly
                     frame.pts = self.frame_pts
                     frame.time_base = Fraction(1, 48000)
                     self.frame_pts += frame.samples
-
                     # Put the frame on the asyncio queue in the main event loop.
                     self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, frame)
                 except Exception as e:
@@ -194,12 +179,21 @@ class FFmpegAudioTrack(MediaStreamTrack):
         """
         frame = await self.frame_queue.get()
         if frame is None:
-            # We signal "end of track" by raising an exception. Another approach
-            # is to return empty frames or do something else, but typically
-            # raising MediaStreamError will close the track.
-            from aiortc.exceptions import MediaStreamError
-            raise MediaStreamError("End of audio stream")
+            # Option 1: Return a silent frame so the stream continues with silence.
+            samples_per_frame = 48000 // 50  # 960 samples (~20ms)
+            # Create a frame of silence (all zeros)
+            silent_samples = np.zeros((1, samples_per_frame), dtype=np.int16)
+            silent_frame = AudioFrame.from_ndarray(silent_samples, format="s16", layout="mono")
+            silent_frame.sample_rate = 48000
+            silent_frame.pts = self.frame_pts
+            silent_frame.time_base = Fraction(1, 48000)
+            self.frame_pts += silent_frame.samples
+            return silent_frame
 
+            # Option 2: If you want to actually signal end-of-stream,
+            # call self.stop() and then return or break out of the stream loop.
+            # self.stop()
+            # return
         return frame
 
 
@@ -340,10 +334,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="offer"))
                 answer = await pc.createAnswer()
                 # Force OPUS as the only audio codec in the SDP.
-                # modified_sdp = prefer_opus(answer.sdp)
-                await pc.setLocalDescription(RTCSessionDescription(sdp=answer.sdp, type="answer"))
+                modified_sdp = prefer_opus(answer.sdp)
+                await pc.setLocalDescription(RTCSessionDescription(sdp=modified_sdp, type="answer"))
                 #print("Server SDP:\n", pc.localDescription.sdp)
-                await websocket.send_json({"type": "answer", "sdp": answer.sdp, "sessionId": session_id})
+                await websocket.send_json({"type": "answer", "sdp": modified_sdp, "sessionId": session_id})
 
             elif data["type"] == "ice-candidate":
                 pc = peer_connections.get(session_id)
