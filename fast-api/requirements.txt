@@ -6,3 +6,4 @@ python-multipart==0.0.20
 firebase-admin==6.6.0
 pinecone==5.4.2
 pinecone-plugin-records==1.1.0
+python-dotenv==1.0.1
