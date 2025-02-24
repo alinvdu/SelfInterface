@@ -11,7 +11,7 @@ import { BiColorFill } from "react-icons/bi";
 import { LuPhoneCall } from "react-icons/lu";
 import Model from "./Model.js";
 
-const api = "https://silver-space-pancake-97w4jq55q9v2xxxg-8000.app.github.dev";
+const api = "http://localhost:8000";
 
 // --- MemoryCard Component ---
 function MemoryCard({ memory, hue }) {

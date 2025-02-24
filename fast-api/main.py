@@ -17,8 +17,8 @@ from pinecone import Pinecone
 from dotenv import load_dotenv
 import time
 
-import logging
-logging.basicConfig(level=logging.DEBUG)
+# import logging
+# logging.basicConfig(level=logging.DEBUG)
 
 
 # WebRTC and media-related imports.
@@ -86,6 +86,7 @@ class FFmpegAudioTrack(MediaStreamTrack):
         self.loop = asyncio.get_event_loop()
         self.frame_pts = 0
         self._ended = False
+        self._start_time = None  # To track the real-time start of playback
 
         # Launch FFmpeg to decode MP3 (from stdin) to raw PCM (s16le, mono, 48000 Hz)
         self.ffmpeg = subprocess.Popen(
@@ -105,16 +106,13 @@ class FFmpegAudioTrack(MediaStreamTrack):
             stdout=subprocess.PIPE
         )
 
-        # Start background threads to feed FFmpeg and read its output.
+        # Start background threads to feed FFmpeg and read its output
         self._feed_thread = threading.Thread(target=self._feed_data, daemon=True)
         self._feed_thread.start()
         self._read_thread = threading.Thread(target=self._read_frames, daemon=True)
         self._read_thread.start()
 
     def _feed_data(self):
-        """
-        Continuously write incoming MP3 chunks from the synchronous queue into FFmpeg's stdin.
-        """
         while True:
             chunk = self.sync_audio_queue.get()
             if chunk is None:
@@ -125,8 +123,6 @@ class FFmpegAudioTrack(MediaStreamTrack):
             except Exception as e:
                 print("Error writing to ffmpeg stdin:", e)
                 break
-
-        # Done feeding data
         try:
             self.ffmpeg.stdin.close()
             print("Closed ffmpeg stdin")
@@ -134,17 +130,13 @@ class FFmpegAudioTrack(MediaStreamTrack):
             print(f"Failed to close ffmpeg stdin: {e}")
 
     def _read_frames(self):
-        """
-        Reads raw PCM from FFmpeg stdout in fixed-size chunks,
-        converts them to AudioFrame, and puts them into an asyncio queue.
-        """
         samples_per_frame = 48000 // 50  # 960 samples for a ~20ms frame
         frame_size = samples_per_frame * 2  # 1920 bytes for mono s16
 
         with open("debug-decoded.pcm", "wb") as debug_pcm:
             while True:
                 data = self.ffmpeg.stdout.read(frame_size)
-                if not data:  # EOF reached or FFmpeg ended
+                if not data:
                     print("End of FFmpeg output reached")
                     break
                 if len(data) < frame_size:
@@ -156,32 +148,30 @@ class FFmpegAudioTrack(MediaStreamTrack):
                 try:
                     samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
                     frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
-                    frame.sample_rate = 48000  # Set the sample rate explicitly
+                    frame.sample_rate = 48000
                     frame.pts = self.frame_pts
                     frame.time_base = Fraction(1, 48000)
                     self.frame_pts += frame.samples
-                    # Put the frame on the asyncio queue in the main event loop.
                     self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, frame)
                 except Exception as e:
                     print("Error decoding frame:", e)
 
-        # Wait for FFmpeg to actually exit
         self.ffmpeg.wait()
         print("FFmpeg process finished with return code:", self.ffmpeg.returncode)
-
-        # Once we're out of the loop, signal end-of-stream to recv()
         self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, None)
 
     async def recv(self):
         """
-        Called by aiortc when it needs the next audio frame.
-        We wait on the asyncio queue that _read_frames() populates.
+        Deliver audio frames at the correct real-time intervals (~20ms per frame).
         """
+        if self._start_time is None:
+            self._start_time = self.loop.time()  # Set the start time on first call
+
+        # Get the next frame from the queue
         frame = await self.frame_queue.get()
         if frame is None:
-            # Option 1: Return a silent frame so the stream continues with silence.
-            samples_per_frame = 48000 // 50  # 960 samples (~20ms)
-            # Create a frame of silence (all zeros)
+            # End of stream: return a silent frame and continue (or stop, if preferred)
+            samples_per_frame = 48000 // 50
             silent_samples = np.zeros((1, samples_per_frame), dtype=np.int16)
             silent_frame = AudioFrame.from_ndarray(silent_samples, format="s16", layout="mono")
             silent_frame.sample_rate = 48000
@@ -190,12 +180,25 @@ class FFmpegAudioTrack(MediaStreamTrack):
             self.frame_pts += silent_frame.samples
             return silent_frame
 
-            # Option 2: If you want to actually signal end-of-stream,
-            # call self.stop() and then return or break out of the stream loop.
-            # self.stop()
-            # return
+        # Calculate the expected real-time delivery point for this frame
+        frame_duration = frame.samples / 48000  # Duration in seconds (~0.02s for 960 samples)
+        expected_time = self._start_time + (frame.pts / 48000)  # When this frame should be delivered
+
+        # Current time in the event loop
+        current_time = self.loop.time()
+
+        # If we're ahead of schedule, wait until the correct time
+        if current_time < expected_time:
+            await asyncio.sleep(expected_time - current_time)
+
         return frame
 
+    def stop(self):
+        """Clean up resources when stopping the track."""
+        self._ended = True
+        if self.ffmpeg.poll() is None:
+            self.ffmpeg.terminate()
+        super().stop()
 
 # --- Load environment and initialize services ---
 load_dotenv()
@@ -216,6 +219,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 origins = [
     "http://localhost:3000",
+    "http://192.168.1.133:3000",
     "https://silver-space-pancake-97w4jq55q9v2xxxg-3000.app.github.dev",
     # Add any other origins you need
 ]
@@ -355,6 +359,23 @@ async def websocket_endpoint(websocket: WebSocket):
             await peer_connections[session_id].close()
             del peer_connections[session_id]
 
+# @app.websocket("/ws")
+# async def websocket_endpoint(websocket: WebSocket):
+#     await websocket.accept()
+#     print("Connection open")
+#     try:
+#         while True:
+#             message = await websocket.receive_text()  # Keeps the connection alive
+#             print(f"Received: {message}")
+#             await websocket.send_text(f"Echo: {message}")
+#     except WebSocketDisconnect:
+#         print("Client disconnected")
+#     except Exception as e:
+#         print(f"WebSocket error: {e}")
+#     finally:
+#         print("Connection closed")
+#         await websocket.close()
+
 # --- TTS streaming to WebRTC ---
 import queue
 
@@ -399,7 +420,7 @@ async def generate_proactive_message(session_id: str, user: Optional[dict]):
         memory_info = " ".join([m["text"] for m in memories]) if memories else ""
         greeting_prompt = (
             "You are Atlas, an empathetic AI psychologist. "
-            "Based on your previous experiences and any available background, generate a proactive message that "
+            "Based on your previous experiences and any available background, generate a lengthy proactive message (at least 4 sentences) that "
             "gives a warm greeting and suggests a topic of discussion or asks a probing question that invites the user to share more about themselves. "
             f"Here are some past conversations for reference: {memory_info}."
         )
@@ -413,10 +434,11 @@ async def generate_proactive_message(session_id: str, user: Optional[dict]):
         model=model_version,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": greeting_prompt}
+            {"role": "user", "content": greeting_prompt + "Make sure to generate a 3 sentence message."}
         ]
     )
     proactive_text = proactive_response.choices[0].message.content
+    print('proactive text: ', proactive_text)
     history.append({"role": "assistant", "content": proactive_text})
     return proactive_text
 
