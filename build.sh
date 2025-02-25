@@ -20,9 +20,3 @@ rm -rf fast-api/frontend/*
 # Copy the contents of the build folder into backend/frontend
 # Adjust the source folder name if needed (e.g., 'build' vs. 'dist')
 cp -r self-ui/build/* fast-api/frontend/
-
-cd fast-api
-
-# Step 3: Start the FastAPI server
-echo "Starting FastAPI server..."
-uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
