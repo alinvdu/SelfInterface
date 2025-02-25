@@ -231,7 +231,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 origins = [
     "http://localhost:3000",
-    "http://192.168.1.133:3000",
+    "https://selfinterface-simple-env.up.railway.app/",
+    "http://localhost:8000",
     "https://silver-space-pancake-97w4jq55q9v2xxxg-3000.app.github.dev",
     # Add any other origins you need
 ]
@@ -753,3 +754,7 @@ async def proactive_message(
                 yield chunk
 
     return StreamingResponse(audio_stream(), media_type="audio/mpeg")
+
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

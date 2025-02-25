@@ -11,7 +11,7 @@ import { BiColorFill } from "react-icons/bi";
 import { LuPhoneCall } from "react-icons/lu";
 import Model from "./Model.js";
 
-const api = "http://localhost:8000";
+const api = "https://selfinterface-simple-env.up.railway.app";
 
 // --- MemoryCard Component ---
 function MemoryCard({ memory, hue }) {
