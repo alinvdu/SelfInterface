@@ -120,7 +120,7 @@ function App() {
   // Initialize WebRTC connection
   const initiateWebRTC = async () => {
     try {
-      // 1) Get local microphone track.
+      // 1) Get local microphone track 2.
       const localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
@@ -150,6 +150,7 @@ function App() {
               credential: "P+JbvCClSCMe6XW1",
             },
         ],
+        iceTransportPolicy: "relay"
       });
 
       // 2) Add the microphone track(s) to the connection
@@ -170,6 +171,7 @@ function App() {
         const offer = await peerConnectionRef.current.createOffer({
           offerToReceiveAudio: true,
         });
+        console.log("JS SDP Offer:", offer.sdp);
         await peerConnectionRef.current.setLocalDescription(offer);
 
         // 4) Send the offer to the server

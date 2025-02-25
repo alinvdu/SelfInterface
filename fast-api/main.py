@@ -353,7 +353,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 ]
 
                 # Create configuration with the updated ICE servers
-                config = RTCConfiguration(iceServers=ice_servers)
+                config = RTCConfiguration(iceServers=ice_servers, iceTransportPolicy="relay")
 
                 # Initialize the peer connection
                 pc = RTCPeerConnection(configuration=config)
@@ -374,12 +374,19 @@ async def websocket_endpoint(websocket: WebSocket):
                         "sessionId": session_id
                     }))
 
-                await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="offer"))
-                answer = await pc.createAnswer()
-                # Force OPUS as the only audio codec in the SDP.
-                modified_sdp = prefer_opus(answer.sdp)
-                await pc.setLocalDescription(RTCSessionDescription(sdp=modified_sdp, type="answer"))
-                #print("Server SDP:\n", pc.localDescription.sdp)
+                # Define handle_offer here
+                async def handle_offer(offer):
+                    print("Server Received SDP:", offer.sdp)
+                    await pc.setRemoteDescription(offer)
+                    answer = await pc.createAnswer()
+                    modified_sdp = prefer_opus(answer.sdp)
+                    await pc.setLocalDescription(RTCSessionDescription(sdp=modified_sdp, type="answer"))
+                    print("Server SDP Answer:", modified_sdp)
+                    return modified_sdp
+
+                # Process the incoming offer
+                offer = RTCSessionDescription(sdp=data["sdp"], type="offer")
+                modified_sdp = await handle_offer(offer)
                 await websocket.send_json({"type": "answer", "sdp": modified_sdp, "sessionId": session_id})
 
             elif data["type"] == "ice-candidate":
