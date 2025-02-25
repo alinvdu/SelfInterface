@@ -325,11 +325,37 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_json()
             session_id = data.get("sessionId")
             if data["type"] == "offer":
-                from aiortc import RTCPeerConnection, RTCSessionDescription
+                from aiortc import RTCIceServer, RTCConfiguration, RTCPeerConnection
 
-                stun_server = RTCIceServer(urls="stun:stun.l.google.com:19302")
-                config = RTCConfiguration(iceServers=[stun_server])
+                # Define STUN and TURN servers
+                ice_servers = [
+                    RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
+                    RTCIceServer(
+                        urls="turn:global.relay.metered.ca:80",
+                        username="6975b17010809692e9b965f6",
+                        credential="P+JbvCClSCMe6XW1"
+                    ),
+                    RTCIceServer(
+                        urls="turn:global.relay.metered.ca:80?transport=tcp",
+                        username="6975b17010809692e9b965f6",
+                        credential="P+JbvCClSCMe6XW1"
+                    ),
+                    RTCIceServer(
+                        urls="turn:global.relay.metered.ca:443",
+                        username="6975b17010809692e9b965f6",
+                        credential="P+JbvCClSCMe6XW1"
+                    ),
+                    RTCIceServer(
+                        urls="turns:global.relay.metered.ca:443?transport=tcp",
+                        username="6975b17010809692e9b965f6",
+                        credential="P+JbvCClSCMe6XW1"
+                    )
+                ]
 
+                # Create configuration with the updated ICE servers
+                config = RTCConfiguration(iceServers=ice_servers)
+
+                # Initialize the peer connection
                 pc = RTCPeerConnection(configuration=config)
 
                 peer_connections[session_id] = pc

@@ -125,7 +125,31 @@ function App() {
         audio: true,
       });
       peerConnectionRef.current = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        iceServers: [
+            {
+              urls: "stun:stun.relay.metered.ca:80",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:80",
+              username: "6975b17010809692e9b965f6",
+              credential: "P+JbvCClSCMe6XW1",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:80?transport=tcp",
+              username: "6975b17010809692e9b965f6",
+              credential: "P+JbvCClSCMe6XW1",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:443",
+              username: "6975b17010809692e9b965f6",
+              credential: "P+JbvCClSCMe6XW1",
+            },
+            {
+              urls: "turns:global.relay.metered.ca:443?transport=tcp",
+              username: "6975b17010809692e9b965f6",
+              credential: "P+JbvCClSCMe6XW1",
+            },
+        ],
       });
 
       // 2) Add the microphone track(s) to the connection
