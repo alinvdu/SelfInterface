@@ -88,14 +88,20 @@ function App() {
   const oscillatorRef = useRef(null);
 
   // Function to initialize AudioContext and start continuous sound
-  const initializeProactive = () => {
-    if (!audioContextRef.current) {
-      // Trigger proactive message after initialization
+  const initializeProactive = async () => {
+    try {
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop all tracks as we only need permission
+      // stream.getTracks().forEach(track => track.stop());
+      // After permission is granted, call the proactive endpoint
       if (token && sessionId) {
-        setConversing(true)
+        setConversing(true);
         fetchAndPlayProactiveMessage(`${api}/proactive_message?session_id=${sessionId}`)
           .catch(error => console.error("Error triggering proactive message:", error));
       }
+    } catch (error) {
+      console.error("Microphone permission denied or error accessing microphone:", error);
     }
   };
 
