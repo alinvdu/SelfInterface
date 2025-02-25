@@ -207,7 +207,19 @@ model_version = "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf"
 model_version_extraction = "gpt-4o-mini"
 
 # Initialize Firebase Admin with your service account key.
-cred = credentials.Certificate("../serviceAccountKey.json")
+import base64
+from firebase_admin import credentials
+
+encoded_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
+if not encoded_key:
+    raise ValueError("FIREBASE_SERVICE_ACCOUNT_KEY is not set in the environment.")
+
+# Decode the base64 string to get the original JSON string
+firebase_key_json = base64.b64decode(encoded_key).decode('utf-8')
+firebase_key_dict = json.loads(firebase_key_json)
+
+# Initialize credentials with the decoded JSON
+cred = credentials.Certificate(firebase_key_dict)
 firebase_admin.initialize_app(cred)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
