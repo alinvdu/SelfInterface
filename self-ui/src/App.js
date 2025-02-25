@@ -149,8 +149,7 @@ function App() {
               username: "6975b17010809692e9b965f6",
               credential: "P+JbvCClSCMe6XW1",
             },
-        ],
-        iceTransportPolicy: "relay"
+        ]
       });
 
       // 2) Add the microphone track(s) to the connection
