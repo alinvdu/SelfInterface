@@ -17,8 +17,8 @@ from pinecone import Pinecone
 from dotenv import load_dotenv
 import time
 
-# import logging
-# logging.basicConfig(level=logging.DEBUG)
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 
 # WebRTC and media-related imports.
