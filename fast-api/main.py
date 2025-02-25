@@ -45,6 +45,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 origins = [
     "http://localhost:3000",
+    "https://selfinterface-simple-env.up.railway.app/",
+    "http://localhost:8000",
     "https://silver-space-pancake-97w4jq55q9v2xxxg-3000.app.github.dev",
     # Add any other origins you need
 ]
