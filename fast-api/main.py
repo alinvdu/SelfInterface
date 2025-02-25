@@ -466,3 +466,7 @@ async def proactive_message(
                 yield chunk
 
     return StreamingResponse(audio_stream(), media_type="audio/mpeg")
+
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
