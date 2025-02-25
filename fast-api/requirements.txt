@@ -8,3 +8,5 @@ pinecone==5.4.2
 pinecone-plugin-records==1.1.0
 python-dotenv==1.0.1
 aiortc==1.10.1
+numpy==2.2.3
+av==14.2.0
