@@ -365,10 +365,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="offer"))
                 answer = await pc.createAnswer()
                 # Force OPUS as the only audio codec in the SDP.
-                modified_sdp = prefer_opus(answer.sdp)
-                await pc.setLocalDescription(RTCSessionDescription(sdp=modified_sdp, type="answer"))
+                # modified_sdp = prefer_opus(answer.sdp)
+                await pc.setLocalDescription(answer)
                 #print("Server SDP:\n", pc.localDescription.sdp)
-                await websocket.send_json({"type": "answer", "sdp": modified_sdp, "sessionId": session_id})
+                await websocket.send_json({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type})
 
             elif data["type"] == "ice-candidate":
                 pc = peer_connections.get(session_id)

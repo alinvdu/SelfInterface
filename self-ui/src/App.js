@@ -11,7 +11,7 @@ import { BiColorFill } from "react-icons/bi";
 import { LuPhoneCall } from "react-icons/lu";
 import Model from "./Model.js";
 
-const api = "https://selfinterface-simple-env.up.railway.app";
+const api = "http://localhost:8000";
 
 // --- MemoryCard Component ---
 function MemoryCard({ memory, hue }) {
@@ -125,14 +125,8 @@ function App() {
         audio: true,
       });
 
-      const response = 
-        await fetch("https://selfai.metered.live/api/v1/turn/credentials?apiKey=c549f2ddb61d910692100446a3d9a488336f");
-
-      // Saving the response in the iceServers array
-      const iceServers = await response.json();
-      console.log('ice servers', iceServers)
-
       peerConnectionRef.current = new RTCPeerConnection({
+        iceTransportPolicy: "relay",
         iceServers: [
           {
             urls: "turn:global.relay.metered.ca:80?transport=tcp",
@@ -184,11 +178,10 @@ function App() {
       // 5) When we get the answer, set it as remote description
       wsRef.current.onmessage = async (event) => {
         const message = JSON.parse(event.data);
+        console.log('message type', message.type)
         if (message.type === "answer") {
           console.log("Received answer from server");
-          await peerConnectionRef.current.setRemoteDescription(
-            new RTCSessionDescription({ type: "answer", sdp: message.sdp })
-          );
+          await peerConnectionRef.current.setRemoteDescription(message)
           console.log(
             "Client SDP:",
             peerConnectionRef.current.remoteDescription.sdp
