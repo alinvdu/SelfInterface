@@ -156,9 +156,8 @@ function App() {
         setIsConnected(true);
 
         // Now that the WebSocket is open, create the offer
-        const offer = await peerConnectionRef.current.createOffer({
-          offerToReceiveAudio: true,
-        });
+        peerConnectionRef.current.addTransceiver('audio', { direction: 'recvonly' });
+        const offer = await peerConnectionRef.current.createOffer();
         console.log("JS SDP Offer:", offer.sdp);
         await peerConnectionRef.current.setLocalDescription(offer);
 
