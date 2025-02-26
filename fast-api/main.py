@@ -326,11 +326,9 @@ async def websocket_endpoint(websocket: WebSocket):
             session_id = data.get("sessionId")
             if data["type"] == "offer":
                 from aiortc import RTCIceServer, RTCConfiguration, RTCPeerConnection
-
                 # Define STUN and TURN servers
                 ice_servers = [
-                    RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
-                    RTCIceServer(
+                      RTCIceServer(
                         urls="turn:global.relay.metered.ca:80?transport=tcp",
                         username="6975b17010809692e9b965f6",
                         credential="P+JbvCClSCMe6XW1"

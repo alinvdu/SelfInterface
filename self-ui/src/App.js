@@ -124,22 +124,27 @@ function App() {
       const localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
+
+      const response = 
+        await fetch("https://selfai.metered.live/api/v1/turn/credentials?apiKey=c549f2ddb61d910692100446a3d9a488336f");
+
+      // Saving the response in the iceServers array
+      const iceServers = await response.json();
+      console.log('ice servers', iceServers)
+
       peerConnectionRef.current = new RTCPeerConnection({
         iceServers: [
-            {
-              urls: "stun:stun.relay.metered.ca:80",
-            },
-            {
-              urls: "turn:global.relay.metered.ca:80?transport=tcp",
-              username: "6975b17010809692e9b965f6",
-              credential: "P+JbvCClSCMe6XW1",
-            },
-            {
-              urls: "turns:global.relay.metered.ca:443?transport=tcp",
-              username: "6975b17010809692e9b965f6",
-              credential: "P+JbvCClSCMe6XW1",
-            },
-        ]
+          {
+            urls: "turn:global.relay.metered.ca:80?transport=tcp",
+            username: "6975b17010809692e9b965f6",
+            credential: "P+JbvCClSCMe6XW1",
+          },
+          {
+            urls: "turns:global.relay.metered.ca:443?transport=tcp",
+            username: "6975b17010809692e9b965f6",
+            credential: "P+JbvCClSCMe6XW1",
+          },
+      ],
       });
 
       // 2) Add the microphone track(s) to the connection
