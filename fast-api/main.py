@@ -16,9 +16,10 @@ from firebase_admin import credentials, auth as firebase_auth
 from pinecone import Pinecone
 from dotenv import load_dotenv
 import time
+from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
-import logging
-logging.basicConfig(level=logging.DEBUG)
+# import logging
+# logging.basicConfig(level=logging.DEBUG)
 
 
 # WebRTC and media-related imports.
@@ -28,43 +29,6 @@ from aiortc.contrib.media import MediaStreamTrack
 
 import av
 from fractions import Fraction
-
-# --- Helper: Force OPUS in SDP ---
-def prefer_opus(sdp: str) -> str:
-    lines = sdp.splitlines()
-    m_line_index = None
-    opus_payload = None
-
-    # Find the audio m= line and the payload for OPUS.
-    for i, line in enumerate(lines):
-        if line.startswith("m=audio"):
-            m_line_index = i
-        if "opus/48000" in line:
-            parts = line.split()
-            if parts and parts[0].startswith("a=rtpmap:"):
-                try:
-                    opus_payload = parts[0].split(":")[1]
-                except Exception:
-                    pass
-
-    # If not found, return the SDP unchanged.
-    if m_line_index is None or opus_payload is None:
-        return sdp
-
-    # Modify the m=audio line to only include the OPUS payload.
-    m_line_parts = lines[m_line_index].split()
-    new_m_line = m_line_parts[:3] + [opus_payload]
-    lines[m_line_index] = " ".join(new_m_line)
-
-    # Remove any a=rtpmap and a=fmtp lines for non-OPUS codecs.
-    filtered_lines = []
-    for line in lines:
-        if line.startswith("a=rtpmap:") and "opus/48000" not in line:
-            continue
-        if line.startswith("a=fmtp:") and "opus/48000" not in line:
-            continue
-        filtered_lines.append(line)
-    return "\r\n".join(filtered_lines) + "\r\n"
 
 # --- Custom MediaStreamTrack for TTS audio ---
 import subprocess
@@ -133,28 +97,25 @@ class FFmpegAudioTrack(MediaStreamTrack):
         samples_per_frame = 48000 // 50  # 960 samples for a ~20ms frame
         frame_size = samples_per_frame * 2  # 1920 bytes for mono s16
 
-        with open("debug-decoded.pcm", "wb") as debug_pcm:
-            while True:
-                data = self.ffmpeg.stdout.read(frame_size)
-                if not data:
-                    print("End of FFmpeg output reached")
-                    break
-                if len(data) < frame_size:
-                    print(f"Partial frame received: {len(data)} bytes, skipping")
-                    continue
+        while True:
+            data = self.ffmpeg.stdout.read(frame_size)
+            if not data:
+                print("End of FFmpeg output reached")
+                break
+            if len(data) < frame_size:
+                print(f"Partial frame received: {len(data)} bytes, skipping")
+                continue
 
-                debug_pcm.write(data)
-
-                try:
-                    samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
-                    frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
-                    frame.sample_rate = 48000
-                    frame.pts = self.frame_pts
-                    frame.time_base = Fraction(1, 48000)
-                    self.frame_pts += frame.samples
-                    self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, frame)
-                except Exception as e:
-                    print("Error decoding frame:", e)
+            try:
+                samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
+                frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+                frame.sample_rate = 48000
+                frame.pts = self.frame_pts
+                frame.time_base = Fraction(1, 48000)
+                self.frame_pts += frame.samples
+                self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, frame)
+            except Exception as e:
+                print("Error decoding frame:", e)
 
         self.ffmpeg.wait()
         print("FFmpeg process finished with return code:", self.ffmpeg.returncode)
@@ -224,6 +185,9 @@ firebase_admin.initialize_app(cred)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
+
+DG_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
+dg_client = DeepgramClient(DG_API_KEY)
 
 peer_connections = {}  # Store RTCPeerConnection per session
 
@@ -315,11 +279,30 @@ pinecone_index = pc.Index("self")
 
 from aiortc import RTCConfiguration, RTCIceServer
 
+from scipy.io.wavfile import write
+
+# Store session states globally
+session_states = {}
+class SessionState:
+    def __init__(self):
+        self.transcription = ""  # Accumulated transcription
+        self.language = None    # Detected language
+        self.pc = None          # Peer connection
+        self.audio_task = None  # Audio processing task
+        self.sentence_accumulator = []
+
+import logging
+import traceback
 
 # --- WebSocket endpoint ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    token = websocket.query_params.get("token")
+    user = None
+    if token:
+        user = firebase_auth.verify_id_token(token)
+        print('have user')
     try:
         while True:
             data = await websocket.receive_json()
@@ -345,14 +328,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Initialize the peer connection
                 pc = RTCPeerConnection(configuration=config)
-
                 peer_connections[session_id] = pc
-
-                token = data.get("token")
-                user = await get_optional_user(token)
-                proactive_text = await generate_proactive_message(session_id, user)
-                await stream_tts_to_webrtc(pc, proactive_text, session_id)
-
+                session_states[session_id] = SessionState()
+                session_states[session_id].pc = pc
+                session_state = session_states.get(session_id)
+                
                 @pc.on("icecandidate")
                 def on_icecandidate(candidate):
                     print('ice cndidate')
@@ -362,6 +342,127 @@ async def websocket_endpoint(websocket: WebSocket):
                         "sessionId": session_id
                     }))
 
+                # Handle incoming tracks
+                @pc.on("track")
+                async def on_track(track):
+                    if track.kind != "audio":
+                        return
+
+                    logging.info("Session %s: Audio track detected: %s", session_id, track)
+
+                    # Create the Deepgram connection using the SDK's synchronous API.
+                    try:
+                        dg_connection = dg_client.listen.websocket.v("1")
+                    except Exception as e:
+                        logging.error("Session %s: Failed to create Deepgram connection: %s\n%s", 
+                                    session_id, e, traceback.format_exc())
+                        return
+
+                    # Handler for transcript results
+                    def on_transcript(self, result, **kwargs):
+                        result_dict = result.to_dict()
+                        sentence = result_dict['channel']['alternatives'][0]['transcript']
+                        if len(sentence.strip()) > 0:  # Only accumulate non-empty transcripts
+                            session_state.sentence_accumulator.append(sentence)
+
+                    # Handler for UtteranceEnd events
+                    def on_utterance_end(result, **kwargs):
+                        if session_state.sentence_accumulator:
+                            # Combine accumulated parts into a single sentence
+                            response = client.chat.completions.create(
+                                model=model_version_extraction,
+                                messages=[
+                                    {"role": "system", "content": "You are an expert at composing together utterances from speech detection. Please provide back the resulting answer given intermediary utterances, please do not add anything else to the response."},
+                                    {"role": "user", "content": "\n".join(session_state.sentence_accumulator)}
+                                ]
+                            )
+                            full_sentence = response.choices[0].message.content
+                            print('Full sentence is: ', full_sentence)
+                            try:
+                                loop = asyncio.get_running_loop()
+                                print('triggering process message')
+                                loop.create_task(process_message(pc, sentence, session_id, user))
+                            except RuntimeError:
+                                # If no event loop is running, create one (useful if running in a separate thread)
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                print('triggering process message')
+                                loop.run_until_complete(process_message(pc, full_sentence, session_id, user))
+                                # Reset accumulator for the next utterance
+                            session_state.sentence_accumulator = []
+                        else:
+                            print("No sentence accumulated at UtteranceEnd")
+
+                    # Register event handlers
+                    dg_connection.on(LiveTranscriptionEvents.Transcript, on_transcript)
+                    dg_connection.on(LiveTranscriptionEvents.UtteranceEnd, on_utterance_end)
+
+                    # Set up Deepgram options matching your audio format.
+                    options = LiveOptions(
+                        model="nova-3",
+                        punctuate=True,
+                        language="en-US",
+                        encoding="linear16",  # Assuming your PCM data is in linear16 format.
+                        sample_rate=48000,
+                        channels=2,
+                        interim_results=True,
+                        utterance_end_ms="1000",
+                        vad_events=True
+                    )
+
+                    if not dg_connection.start(options):
+                        logging.error("Session %s: Failed to start Deepgram connection", session_id)
+                        return
+
+                    # Create a thread-safe queue for audio data.
+                    
+                    audio_queue = queue.Queue()
+
+                    # Background thread that sends audio data from the queue to Deepgram.
+                    def send_audio_thread():
+                        logging.info("Session %s: Audio sending thread started", session_id)
+                        try:
+                            while True:
+                                data = audio_queue.get()
+                                if data is None:
+                                    break
+                                logging.debug("Session %s: Sending %d bytes to Deepgram", session_id, len(data))
+                                dg_connection.send(data)
+                        except Exception as e:
+                            logging.error("Session %s: Error in send_audio_thread: %s\n%s", 
+                                        session_id, e, traceback.format_exc())
+                        finally:
+                            dg_connection.finish()
+                            logging.info("Session %s: Deepgram connection finished", session_id)
+
+                    # Start the background sender thread.
+                    sender_thread = threading.Thread(target=send_audio_thread, daemon=True)
+                    sender_thread.start()
+
+                    # Asynchronously receive audio frames from the track and put them into the queue.
+                    try:
+                        while True:
+                            frame = await track.recv()
+                            if frame is None:
+                                logging.info("Session %s: No more frames; ending audio capture", session_id)
+                                break
+                            audio_data = frame.to_ndarray()
+                             # Basic energy-based silence detection
+                            energy = np.sum(np.abs(audio_data)) / audio_data.size
+                            if energy > 10:  # Adjust threshold based on your audio
+                                audio_queue.put(audio_data.tobytes())
+                    except Exception as e:
+                        logging.error("Session %s: Error reading audio track: %s\n%s", 
+                                    session_id, e, traceback.format_exc())
+                    finally:
+                        # Signal the sender thread to finish and wait for it to join.
+                        audio_queue.put(None)
+                        sender_thread.join()
+                        
+                token = data.get("token")
+                user = await get_optional_user(token)
+                proactive_text = await generate_proactive_message(session_id, user)
+                await stream_tts_to_webrtc(pc, proactive_text, session_id)
                 await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="offer"))
                 answer = await pc.createAnswer()
                 # Force OPUS as the only audio codec in the SDP.
@@ -407,9 +508,22 @@ async def websocket_endpoint(websocket: WebSocket):
 import queue
 
 async def stream_tts_to_webrtc(pc, text, session_id):
-    # Create a thread-safe synchronous queue for audio chunks.
-    sync_audio_queue = queue.Queue()
-
+    session_state = session_states.get(session_id)
+    if not session_state:
+        session_state = SessionState()
+        session_states[session_id] = session_state
+    
+    # Check if an existing audio track is available
+    if not hasattr(session_state, "audio_track") or session_state.audio_track is None:
+        sync_audio_queue = queue.Queue()
+        audio_track = FFmpegAudioTrack(sync_audio_queue)
+        pc.addTrack(audio_track)
+        session_state.audio_track = audio_track
+        session_state.sync_audio_queue = sync_audio_queue
+    else:
+        print(f"Session {session_id}: Reusing existing audio track for TTS")
+        sync_audio_queue = session_state.sync_audio_queue
+        
     async def fill_audio_queue():
         try:
             with client.audio.speech.with_streaming_response.create(
@@ -419,16 +533,12 @@ async def stream_tts_to_webrtc(pc, text, session_id):
             ) as response:
                 for chunk in response.iter_bytes():
                     sync_audio_queue.put(chunk)
-            sync_audio_queue.put(None)  # Signal end-of-stream.
+            # sync_audio_queue.put(None)  # Signal end-of-stream.
         except Exception as e:
             print(f"Error in TTS fill task: {e}")
-            sync_audio_queue.put(None)
+            # sync_audio_queue.put(None)
 
     asyncio.create_task(fill_audio_queue())
-
-    # Create the FFmpeg-based track and add it to the peer connection.
-    audio_track = FFmpegAudioTrack(sync_audio_queue)
-    pc.addTrack(audio_track)
 
 # --- Generate proactive message ---
 async def generate_proactive_message(session_id: str, user: Optional[dict]):
@@ -603,93 +713,51 @@ async def stop_playing():
     stop_event.set()
     return {"message": "Playback stopping..."}
 
-@app.post("/process_audio")
-async def process_audio(
-    file: UploadFile = File(...),
-    tts: bool = False,
-    session_id: str = Query(...),
-    user: dict = Depends(get_optional_user)
+async def process_message(
+    pc,
+    user_text,
+    session_id,
+    user
 ):
-    file_extension = file.filename.split(".")[-1]
-    temp_file_name = f"{uuid.uuid4()}.{file_extension}"
-    temp_dir = tempfile.gettempdir()
-    temp_file_path = os.path.join(temp_dir, temp_file_name)
+    history = conversation_histories[session_id]
 
-    stop_event.clear()
-
-    async with aiofiles.open(temp_file_path, 'wb') as out_file:
-        content = await file.read()
-        await out_file.write(content)
-
-    try:
-        with open(temp_file_path, "rb") as audio_file:
-            transcript_response = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file
-            )
-        user_text = transcript_response.text
-
-        history = conversation_histories[session_id]
-        print('current history', history)
-
-        if user:
-            results = pinecone_index.search_records(
-                namespace="user-memories",
-                query={
-                    "inputs": {"text": user_text},
-                    "top_k": 5,
-                    "filter": {"user_id": {"$eq": user["uid"]}}
-                },
-                fields=["text"]
-            )
-            memories = []
-            result = results.get("result", {})
-            for match in result.get("hits", []):
-                fields = match.get("fields", {})
-                if "text" in fields:
-                    category = fields.get("category", "Unknown Category")
-                    memories.append("Category: " + category + "\n Memory: " + fields["text"])
-
-            if memories:
-                retrieved_memories_text = (
-                    "MEMORY_INJECTION: The following are memories retained about the user:\n" +
-                    "\n".join(memories) +
-                    "\nYou have the capacity to retain memory about the user, so act accordingly."
-                )
-                history.append({"role": "system", "content": retrieved_memories_text})
-
-        history.append({"role": "user", "content": user_text})
-
-        chat_response = client.chat.completions.create(
-            model=model_version,
-            messages=history
+    if user:
+        results = pinecone_index.search_records(
+            namespace="user-memories",
+            query={
+                "inputs": {"text": user_text},
+                "top_k": 5,
+                "filter": {"user_id": {"$eq": user["uid"]}}
+            },
+            fields=["text"]
         )
-        assistant_text = chat_response.choices[0].message.content
-        history.append({"role": "assistant", "content": assistant_text})
-        if tts:
-            def audio_stream():
-                with client.audio.speech.with_streaming_response.create(
-                    model="tts-1",
-                    voice="onyx",
-                    input=assistant_text
-                ) as response:
-                    for chunk in response.iter_bytes():
-                        if stop_event.is_set():
-                            break
-                        yield chunk
-            return StreamingResponse(audio_stream(), media_type="audio/mpeg")
-        else:
-            return JSONResponse(
-                content={
-                    "transcribed_text": user_text,
-                    "assistant_text": assistant_text
-                }
+        memories = []
+        result = results.get("result", {})
+        for match in result.get("hits", []):
+            fields = match.get("fields", {})
+            if "text" in fields:
+                category = fields.get("category", "Unknown Category")
+                memories.append("Category: " + category + "\n Memory: " + fields["text"])
+
+        if memories:
+            retrieved_memories_text = (
+                "MEMORY_INJECTION: The following are memories retained about the user:\n" +
+                "\n".join(memories) +
+                "\nYou have the capacity to retain memory about the user, so act accordingly."
             )
-    except Exception as e:
-        print('Error is: ', e)
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-    finally:
-        os.remove(temp_file_path)
+            history.append({"role": "system", "content": retrieved_memories_text})
+
+    history.append({"role": "user", "content": user_text})
+
+    chat_response = client.chat.completions.create(
+        model=model_version,
+        messages=history
+    )
+    assistant_text = chat_response.choices[0].message.content
+    print('psychologist response is: ', assistant_text)
+    history.append({"role": "assistant", "content": assistant_text})
+    
+    await stream_tts_to_webrtc(pc, assistant_text, session_id)
 
 @app.get("/retrieve_memories")
 async def retrieve_memories(user: dict = Depends(verify_token)):
@@ -708,66 +776,6 @@ async def retrieve_memories(user: dict = Depends(verify_token)):
     } for match in results.get("matches", [])]
     memories.sort(key=lambda x: x["timestamp"], reverse=True)
     return JSONResponse(content={"memories": memories})
-
-@app.post("/proactive_message")
-async def proactive_message(
-    session_id: str = Query(...),
-    user: dict = Depends(get_optional_user)
-):
-    if session_id not in conversation_histories:
-        return JSONResponse(content={"message": "Session not found."}, status_code=404)
-    
-    history = conversation_histories[session_id]
-    if user is not None:
-        dummy_vector = [0.0] * 1024
-        results = pinecone_index.query(
-            vector=dummy_vector,
-            query="user general information, user name, general emotions",
-            top_k=5,
-            filter={"user_id": {"$eq": user["uid"]}},
-            namespace="user-memories",
-            include_metadata=True
-        )
-        memories = [{
-            "text": match["metadata"]["text"],
-            "category": match["metadata"]["category"]
-        } for match in results.get("matches", [])]
-        memory_info = " ".join([m["text"] for m in memories]) if memories else ""
-        greeting_prompt = (
-            "You are Atlas, an empathetic AI psychologist. "
-            "Based on your previous experiences and any available background, generate a proactive message that "
-            "gives a warm greeting and suggests a topic of discussion or asks a probing question that invites the user to share more about themselves. "
-            "If no specific background is available, simply ask what brings you here. "
-            f"Here are some past conversations for reference (in case you might want to use them): {memory_info}. \n Only respond in English."
-        )
-    else:
-        greeting_prompt = (
-            "You are Atlas, an empathetic AI psychologist. "
-            "Generate a brief, warm greeting that introduces yourself and invites the user to share."
-        )
-
-    proactive_input = greeting_prompt
-    proactive_response = client.chat.completions.create(
-         model=model_version,
-         messages=[
-             {"role": "system", "content": SYSTEM_PROMPT},
-             {"role": "user", "content": proactive_input}
-         ]
-    )
-    proactive_text = proactive_response.choices[0].message.content
-    history.append({"role": "assistant", "content": proactive_text})
-    print(proactive_text)
-    time.sleep(10)
-    def audio_stream():
-        with client.audio.speech.with_streaming_response.create(
-            model="tts-1",
-            voice="onyx",
-            input=proactive_text
-        ) as response:
-            for chunk in response.iter_bytes():
-                yield chunk
-
-    return StreamingResponse(audio_stream(), media_type="audio/mpeg")
 
 from fastapi.staticfiles import StaticFiles
 

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 
 function Model({ isPlaying }) {
-  const { scene, animations } = useGLTF('/assets/ai-psychologist5.glb');
+  const { scene, animations } = useGLTF('/assets/ai-psychologist6.glb');
   const { actions } = useAnimations(animations, scene);
   const talkActionRef = useRef(null);
 
@@ -17,6 +17,7 @@ function Model({ isPlaying }) {
       if (animations[1]) {
         const talkClip = animations[1];
         const talkAction = actions[talkClip.name];
+        talkAction.timeScale = 1.65;
         talkActionRef.current = talkAction;
         talkAction.reset(); // start with talk animation stopped
         if (isPlaying) {
@@ -28,7 +29,6 @@ function Model({ isPlaying }) {
 
   useEffect(() => {
     if (talkActionRef.current) {
-      console.log('is playing', isPlaying)
       if (isPlaying) {
         // When audio is playing, start or restart the talk animation
         talkActionRef.current.reset().play();
