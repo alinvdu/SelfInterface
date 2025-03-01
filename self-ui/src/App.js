@@ -11,7 +11,7 @@ import { HiOutlinePhone } from "react-icons/hi2";
 import { HiOutlinePhoneXMark } from "react-icons/hi2";
 import Model from "./Model.js";
 
-const api = "http://localhost:8000";
+const api = "https://selfinterface-simple-env.up.railway.app";
 
 // --- MemoryCard Component ---
 function MemoryCard({ memory, hue }) {
@@ -137,11 +137,9 @@ function App() {
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = async () => {
-        console.log("WebSocket opened");
         // Now that the WebSocket is open, create the offer
         peerConnectionRef.current.addTransceiver('audio', { direction: 'recvonly' });
         const offer = await peerConnectionRef.current.createOffer();
-        console.log("JS SDP Offer:", offer.sdp);
         await peerConnectionRef.current.setLocalDescription(offer);
 
         // 4) Send the offer to the server
@@ -160,7 +158,6 @@ function App() {
       // 5) When we get the answer, set it as remote description
       wsRef.current.onmessage = async (event) => {
         const message = JSON.parse(event.data);
-        console.log('message type', message.type)
         if (message.type === "answer") {
           console.log("Received answer from server");
           await peerConnectionRef.current.setRemoteDescription(message)
@@ -192,6 +189,7 @@ function App() {
 
       // 8) This is where we receive the **remote** TTS track
       peerConnectionRef.current.ontrack = (event) => {
+        console.log('got new track')
         // We create an audio element and attach the remote stream
         // Keep your working playback logic
         setPhoneCalling(false);

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 
 function Model({ isPlaying }) {
-  const { scene, animations } = useGLTF('/assets/ai-psychologist6.glb');
+  const { scene, animations } = useGLTF('/assets/ai-psychologist5.glb');
   const { actions } = useAnimations(animations, scene);
   const talkActionRef = useRef(null);
 

@@ -40,126 +40,69 @@ from fractions import Fraction
 from aiortc.contrib.media import MediaStreamTrack
 from av import AudioFrame
 
-class FFmpegAudioTrack(MediaStreamTrack):
+import librosa
+
+END_OF_STREAM_SENTINEL = object()
+class PCM24kAudioTrack(MediaStreamTrack):
     kind = "audio"
 
     def __init__(self, sync_audio_queue):
         super().__init__()
-        self.sync_audio_queue = sync_audio_queue  # A thread-safe queue (queue.Queue)
+        self.sync_audio_queue = sync_audio_queue
         self.frame_queue = asyncio.Queue()
         self.loop = asyncio.get_event_loop()
         self.frame_pts = 0
-        self._ended = False
-        self._start_time = None  # To track the real-time start of playback
+        self.start_time = None
+        self.last_frame = None
 
-        # Launch FFmpeg to decode MP3 (from stdin) to raw PCM (s16le, mono, 48000 Hz)
-        self.ffmpeg = subprocess.Popen(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error",
-                "-f", "mp3",
-                "-i", "pipe:0",
-                "-f", "s16le",
-                "-acodec", "pcm_s16le",
-                "-ac", "1",
-                "-ar", "48000",
-                "pipe:1"
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE
-        )
+        # Start one processing thread that reads and splits PCM bytes
+        self._process_thread = threading.Thread(target=self._process_data, daemon=True)
+        self._process_thread.start()
+        
+    def _reset_time(self):
+        self.pts = 0
 
-        # Start background threads to feed FFmpeg and read its output
-        self._feed_thread = threading.Thread(target=self._feed_data, daemon=True)
-        self._feed_thread.start()
-        self._read_thread = threading.Thread(target=self._read_frames, daemon=True)
-        self._read_thread.start()
-
-    def _feed_data(self):
+    def _process_data(self):
+        # For 24kHz, 20ms frame: (24000 / 50) samples per frame;
+        # with 16-bit samples (2 bytes each) => 960 bytes/frame.
+        frame_size = (24000 // 50) * 2  # 960 bytes per frame
+        buffer = bytearray()
         while True:
-            chunk = self.sync_audio_queue.get()
-            if chunk is None:
-                break
             try:
-                self.ffmpeg.stdin.write(chunk)
-                self.ffmpeg.stdin.flush()
+                chunk = self.sync_audio_queue.get()
+                buffer.extend(chunk)
+                # Process complete frames from the buffer
+                while len(buffer) >= frame_size:
+                    frame_bytes = bytes(buffer[:frame_size])
+                    del buffer[:frame_size]
+                    try:
+                        # Convert bytes to numpy array and create an AudioFrame
+                        samples = np.frombuffer(frame_bytes, dtype=np.int16).reshape(1, -1)
+                        frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+                        frame.sample_rate = 24000
+                        frame.pts = self.frame_pts
+                        frame.time_base = Fraction(1, 24000)
+                        self.frame_pts += frame.samples
+                        # Queue the frame so that recv() can deliver it
+                        self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, frame)
+                    except Exception as e:
+                        print("Error decoding frame:", e)
             except Exception as e:
-                print("Error writing to ffmpeg stdin:", e)
+                print(f"Error in processing thread: {e}")
                 break
-        try:
-            self.ffmpeg.stdin.close()
-            print("Closed ffmpeg stdin")
-        except Exception as e:
-            print(f"Failed to close ffmpeg stdin: {e}")
-
-    def _read_frames(self):
-        samples_per_frame = 48000 // 50  # 960 samples for a ~20ms frame
-        frame_size = samples_per_frame * 2  # 1920 bytes for mono s16
-
-        while True:
-            data = self.ffmpeg.stdout.read(frame_size)
-            if not data:
-                print("End of FFmpeg output reached")
-                break
-            if len(data) < frame_size:
-                print(f"Partial frame received: {len(data)} bytes, skipping")
-                continue
-
-            try:
-                samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
-                frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
-                frame.sample_rate = 48000
-                frame.pts = self.frame_pts
-                frame.time_base = Fraction(1, 48000)
-                self.frame_pts += frame.samples
-                self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, frame)
-            except Exception as e:
-                print("Error decoding frame:", e)
-
-        self.ffmpeg.wait()
-        print("FFmpeg process finished with return code:", self.ffmpeg.returncode)
-        self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, None)
 
     async def recv(self):
-        """
-        Deliver audio frames at the correct real-time intervals (~20ms per frame).
-        """
-        if self._start_time is None:
-            self._start_time = self.loop.time()  # Set the start time on first call
-
-        # Get the next frame from the queue
         frame = await self.frame_queue.get()
-        if frame is None:
-            # End of stream: return a silent frame and continue (or stop, if preferred)
-            samples_per_frame = 48000 // 50
-            silent_samples = np.zeros((1, samples_per_frame), dtype=np.int16)
-            silent_frame = AudioFrame.from_ndarray(silent_samples, format="s16", layout="mono")
-            silent_frame.sample_rate = 48000
-            silent_frame.pts = self.frame_pts
-            silent_frame.time_base = Fraction(1, 48000)
-            self.frame_pts += silent_frame.samples
-            return silent_frame
 
-        # Calculate the expected real-time delivery point for this frame
-        frame_duration = frame.samples / 48000  # Duration in seconds (~0.02s for 960 samples)
-        expected_time = self._start_time + (frame.pts / 48000)  # When this frame should be delivered
+        if self.last_frame:
+            expected_delay = (frame.pts - self.last_frame.pts) / 24000
+            actual_delay = time.monotonic() - self.last_frame_timestamp
+            drift_correction = expected_delay - actual_delay
+            await asyncio.sleep(max(0, drift_correction))
 
-        # Current time in the event loop
-        current_time = self.loop.time()
-
-        # If we're ahead of schedule, wait until the correct time
-        if current_time < expected_time:
-            await asyncio.sleep(expected_time - current_time)
-
+        self.last_frame = frame
+        self.last_frame_timestamp = time.monotonic()
         return frame
-
-    def stop(self):
-        """Clean up resources when stopping the track."""
-        self._ended = True
-        if self.ffmpeg.poll() is None:
-            self.ffmpeg.terminate()
-        super().stop()
 
 # --- Load environment and initialize services ---
 load_dotenv()
@@ -215,7 +158,11 @@ stop_event = asyncio.Event()
 conversation_histories = {}
 
 CURRENT_EXPERIENCE = """
-You had a previous client that suffered a breakdown, it was hard to watch it but you understood a lot about the human psychic. You should not talk about this, only if it makes sense based on the user feedback.
+Hello, You had a previous client that suffered a breakdown, it was hard to watch it but you understood a lot about the human psychic. You should not talk about this, only if it makes sense based on the user feedback.
+You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
+You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
+You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
+You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
 You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
 """
 
@@ -290,6 +237,7 @@ class SessionState:
         self.pc = None          # Peer connection
         self.audio_task = None  # Audio processing task
         self.sentence_accumulator = []
+        self.processing_event = threading.Event()
 
 import logging
 import traceback
@@ -311,7 +259,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 from aiortc import RTCIceServer, RTCConfiguration, RTCPeerConnection
                 # Define STUN and TURN servers
                 ice_servers = [
-                      RTCIceServer(
+                    RTCIceServer(
                         urls="turn:global.relay.metered.ca:80?transport=tcp",
                         username="6975b17010809692e9b965f6",
                         credential="P+JbvCClSCMe6XW1"
@@ -332,6 +280,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 session_states[session_id] = SessionState()
                 session_states[session_id].pc = pc
                 session_state = session_states.get(session_id)
+                session_state.loop = asyncio.get_running_loop()
                 
                 @pc.on("icecandidate")
                 def on_icecandidate(candidate):
@@ -372,23 +321,19 @@ async def websocket_endpoint(websocket: WebSocket):
                             response = client.chat.completions.create(
                                 model=model_version_extraction,
                                 messages=[
-                                    {"role": "system", "content": "You are an expert at composing together utterances from speech detection. Please provide back the resulting answer given intermediary utterances, please do not add anything else to the response."},
-                                    {"role": "user", "content": "\n".join(session_state.sentence_accumulator)}
+                                    {"role": "system", "content": "You are an algorithm that facilitates composing together utterances from speech detection. Please provide back the resulting answer given intermediary utterances, please do not add anything else to the response. Do not respond to question if any, you have to just figure out what the person is saying."},
+                                    {"role": "user", "content": "\n Intermediate_utterence=".join(session_state.sentence_accumulator)}
                                 ]
                             )
                             full_sentence = response.choices[0].message.content
                             print('Full sentence is: ', full_sentence)
-                            try:
-                                loop = asyncio.get_running_loop()
-                                print('triggering process message')
-                                loop.create_task(process_message(pc, sentence, session_id, user))
-                            except RuntimeError:
-                                # If no event loop is running, create one (useful if running in a separate thread)
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                print('triggering process message')
-                                loop.run_until_complete(process_message(pc, full_sentence, session_id, user))
-                                # Reset accumulator for the next utterance
+                            if session_state.processing_event.is_set():
+                                return
+                            asyncio.run_coroutine_threadsafe(
+                                process_message(session_state.pc, full_sentence, session_id, user),
+                                session_state.loop
+                            )
+                            # Reset accumulator for the next utterance
                             session_state.sentence_accumulator = []
                         else:
                             print("No sentence accumulated at UtteranceEnd")
@@ -426,7 +371,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 data = audio_queue.get()
                                 if data is None:
                                     break
-                                logging.debug("Session %s: Sending %d bytes to Deepgram", session_id, len(data))
                                 dg_connection.send(data)
                         except Exception as e:
                             logging.error("Session %s: Error in send_audio_thread: %s\n%s", 
@@ -447,10 +391,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                 logging.info("Session %s: No more frames; ending audio capture", session_id)
                                 break
                             audio_data = frame.to_ndarray()
-                             # Basic energy-based silence detection
-                            energy = np.sum(np.abs(audio_data)) / audio_data.size
-                            if energy > 10:  # Adjust threshold based on your audio
-                                audio_queue.put(audio_data.tobytes())
+                            # Basic energy-based silence detection
+                            audio_queue.put(audio_data.tobytes())
                     except Exception as e:
                         logging.error("Session %s: Error reading audio track: %s\n%s", 
                                     session_id, e, traceback.format_exc())
@@ -487,23 +429,6 @@ async def websocket_endpoint(websocket: WebSocket):
             await peer_connections[session_id].close()
             del peer_connections[session_id]
 
-# @app.websocket("/ws")
-# async def websocket_endpoint(websocket: WebSocket):
-#     await websocket.accept()
-#     print("Connection open")
-#     try:
-#         while True:
-#             message = await websocket.receive_text()  # Keeps the connection alive
-#             print(f"Received: {message}")
-#             await websocket.send_text(f"Echo: {message}")
-#     except WebSocketDisconnect:
-#         print("Client disconnected")
-#     except Exception as e:
-#         print(f"WebSocket error: {e}")
-#     finally:
-#         print("Connection closed")
-#         await websocket.close()
-
 # --- TTS streaming to WebRTC ---
 import queue
 
@@ -516,29 +441,50 @@ async def stream_tts_to_webrtc(pc, text, session_id):
     # Check if an existing audio track is available
     if not hasattr(session_state, "audio_track") or session_state.audio_track is None:
         sync_audio_queue = queue.Queue()
-        audio_track = FFmpegAudioTrack(sync_audio_queue)
+        audio_track = PCM24kAudioTrack(sync_audio_queue)
         pc.addTrack(audio_track)
         session_state.audio_track = audio_track
         session_state.sync_audio_queue = sync_audio_queue
     else:
         print(f"Session {session_id}: Reusing existing audio track for TTS")
         sync_audio_queue = session_state.sync_audio_queue
+        session_state.audio_track._reset_time()
+        
+    def monitor_frame_queue(tts_track):
+        last_frame_queue = None
+        while True:
+            current_queue_size = session_state.audio_track.frame_queue.qsize()
+            if current_queue_size == 0 and last_frame_queue == 0:
+                print('clearing the event')
+                session_state.processing_event.clear()
+                break
+            last_frame_queue = 0
+            time.sleep(1)
         
     async def fill_audio_queue():
         try:
             with client.audio.speech.with_streaming_response.create(
                 model="tts-1",
                 voice="onyx",
-                input=text
+                input=text,
+                response_format="pcm"
             ) as response:
                 for chunk in response.iter_bytes():
                     sync_audio_queue.put(chunk)
-            # sync_audio_queue.put(None)  # Signal end-of-stream.
+                monitor_thread = threading.Thread(target=monitor_frame_queue, args=(session_state.audio_track,), daemon=True)
+                monitor_thread.start()
+
         except Exception as e:
             print(f"Error in TTS fill task: {e}")
-            # sync_audio_queue.put(None)
 
-    asyncio.create_task(fill_audio_queue())
+    session_state.processing_event.set()
+    print('is set right after fill audio', session_state.processing_event.is_set())
+    def run_fill_audio_queue():
+        asyncio.run(fill_audio_queue())
+
+    # Later in your code, instead of asyncio.create_task(fill_audio_queue()):
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, run_fill_audio_queue)
 
 # --- Generate proactive message ---
 async def generate_proactive_message(session_id: str, user: Optional[dict]):
