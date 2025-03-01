@@ -40,8 +40,6 @@ from fractions import Fraction
 from aiortc.contrib.media import MediaStreamTrack
 from av import AudioFrame
 
-import librosa
-
 END_OF_STREAM_SENTINEL = object()
 class PCM24kAudioTrack(MediaStreamTrack):
     kind = "audio"
@@ -225,8 +223,6 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 pinecone_index = pc.Index("self")
 
 from aiortc import RTCConfiguration, RTCIceServer
-
-from scipy.io.wavfile import write
 
 # Store session states globally
 session_states = {}
