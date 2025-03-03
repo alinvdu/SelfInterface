@@ -18,6 +18,18 @@ from dotenv import load_dotenv
 import time
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
+import logging
+
+# Configure logging
+# logging.basicConfig(
+#     level=logging.DEBUG,  # Set to DEBUG to capture all levels
+#     format='%(asctime)s - %(levelname)s - %(message)s',
+#     handlers=[
+#         logging.StreamHandler()  # Output to console
+#     ]
+# )
+# logger = logging.getLogger(__name__)
+
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
 
@@ -154,6 +166,7 @@ stop_event = asyncio.Event()
 
 # In-memory conversation history: session_id -> list of messages
 conversation_histories = {}
+chat_histories = {}
 
 CURRENT_EXPERIENCE = """
 Hello, You had a previous client that suffered a breakdown, it was hard to watch it but you understood a lot about the human psychic. You should not talk about this, only if it makes sense based on the user feedback.
@@ -243,14 +256,25 @@ import traceback
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     token = websocket.query_params.get("token")
+    session_id = websocket.query_params.get("session_id")
     user = None
     if token:
         user = firebase_auth.verify_id_token(token)
-        print('have user')
+        
+    # generate proactive message for chat
+    proactive_message_chat = await generate_proactive_message(user)
+    print('Proactive chat message: ', proactive_message_chat)
+    chat_history = chat_histories[session_id]
+    chat_history.append({"role": "assistant", "content": proactive_message_chat})
+
+    await websocket.send_json({
+        "type": "CHAT_MESSAGE",
+        "message": proactive_message_chat
+    })
+
     try:
         while True:
             data = await websocket.receive_json()
-            session_id = data.get("sessionId")
             if data["type"] == "offer":
                 from aiortc import RTCIceServer, RTCConfiguration, RTCPeerConnection
                 # Define STUN and TURN servers
@@ -326,7 +350,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             if session_state.processing_event.is_set():
                                 return
                             asyncio.run_coroutine_threadsafe(
-                                process_message(session_state.pc, full_sentence, session_id, user),
+                                process_message(session_state.pc, full_sentence, session_id, user, websocket),
                                 session_state.loop
                             )
                             # Reset accumulator for the next utterance
@@ -396,17 +420,15 @@ async def websocket_endpoint(websocket: WebSocket):
                         # Signal the sender thread to finish and wait for it to join.
                         audio_queue.put(None)
                         sender_thread.join()
-                        
-                token = data.get("token")
-                user = await get_optional_user(token)
-                proactive_text = await generate_proactive_message(session_id, user)
-                await stream_tts_to_webrtc(pc, proactive_text, session_id)
+
+                proactive_text = await generate_proactive_message(user)
+                print('Proactive message for phone call: ', proactive_text)
+                history = conversation_histories[session_id]
+                history.append({"role": "assistant", "content": proactive_text})
+                await stream_tts_to_webrtc(pc, proactive_text, session_id, websocket)
                 await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="offer"))
                 answer = await pc.createAnswer()
-                # Force OPUS as the only audio codec in the SDP.
-                # modified_sdp = prefer_opus(answer.sdp)
                 await pc.setLocalDescription(answer)
-                #print("Server SDP:\n", pc.localDescription.sdp)
                 await websocket.send_json({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type})
 
             elif data["type"] == "ice-candidate":
@@ -417,6 +439,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     candidate.sdpMid = candidate_dict.get("sdpMid")
                     candidate.sdpMLineIndex = candidate_dict.get("sdpMLineIndex")
                     await pc.addIceCandidate(candidate)
+            elif data["type"] == "CHAT_MESSAGE":
+                assistant_message = await process_message(None, data["message"], session_id, user, websocket, True)
+                chat_history = chat_histories[session_id]
+                chat_history.append({"role": "assistant", "content": assistant_message})
+
+                await websocket.send_json({
+                    "type": "CHAT_MESSAGE",
+                    "message": assistant_message
+                })
 
     except Exception as e:
         print(f"WebSocket error: {e}")
@@ -424,11 +455,19 @@ async def websocket_endpoint(websocket: WebSocket):
         if session_id in peer_connections:
             await peer_connections[session_id].close()
             del peer_connections[session_id]
+    # except Exception as e:
+    #     logger.error(f"WebSocket error in session {session_id}: {str(e)}", exc_info=True)
+    #     await websocket.close(code=1011, reason=f"Server error: {str(e)}")
+    # finally:
+    #     if session_id in peer_connections:
+    #         await peer_connections[session_id].close()
+    #         del peer_connections[session_id]
+    #         logger.info(f"Closed peer connection for session {session_id}")
 
 # --- TTS streaming to WebRTC ---
 import queue
 
-async def stream_tts_to_webrtc(pc, text, session_id):
+async def stream_tts_to_webrtc(pc, text, session_id, websocket):
     session_state = session_states.get(session_id)
     if not session_state:
         session_state = SessionState()
@@ -445,18 +484,29 @@ async def stream_tts_to_webrtc(pc, text, session_id):
         print(f"Session {session_id}: Reusing existing audio track for TTS")
         sync_audio_queue = session_state.sync_audio_queue
         session_state.audio_track._reset_time()
+
+    # Create a future that will be set when audio processing is done
+    processing_complete = asyncio.Future()
+    
+    async def monitor_frame_queue():
+        # Give some time for audio to be processed and queued
+        await asyncio.sleep(0.5)
         
-    def monitor_frame_queue(tts_track):
-        last_frame_queue = None
-        while True:
+        while not processing_complete.done():
             current_queue_size = session_state.audio_track.frame_queue.qsize()
-            if current_queue_size == 0 and last_frame_queue == 0:
-                print('clearing the event')
-                session_state.processing_event.clear()
-                break
-            last_frame_queue = 0
-            time.sleep(1)
-        
+            if current_queue_size == 0:
+                # Wait a bit to ensure no more frames are coming
+                await asyncio.sleep(0.5)
+                if session_state.audio_track.frame_queue.qsize() == 0:
+                    print('Audio processing complete, notifying client')
+                    session_state.processing_event.clear()
+                    await websocket.send_json({
+                        "type": "FINISHED_PROCESSING"
+                    })
+                    processing_complete.set_result(True)
+                    break
+            await asyncio.sleep(0.2)
+    
     async def fill_audio_queue():
         try:
             with client.audio.speech.with_streaming_response.create(
@@ -467,24 +517,27 @@ async def stream_tts_to_webrtc(pc, text, session_id):
             ) as response:
                 for chunk in response.iter_bytes():
                     sync_audio_queue.put(chunk)
-                monitor_thread = threading.Thread(target=monitor_frame_queue, args=(session_state.audio_track,), daemon=True)
-                monitor_thread.start()
-
+                # Signal that all audio has been queued
+                print("TTS streaming complete")
         except Exception as e:
             print(f"Error in TTS fill task: {e}")
+            processing_complete.set_exception(e)
 
     session_state.processing_event.set()
-    print('is set right after fill audio', session_state.processing_event.is_set())
-    def run_fill_audio_queue():
-        asyncio.run(fill_audio_queue())
-
-    # Later in your code, instead of asyncio.create_task(fill_audio_queue()):
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, run_fill_audio_queue)
+    await websocket.send_json({
+        "type": "PROCESSING"
+    })
+    
+    # Start both tasks
+    fill_task = asyncio.create_task(fill_audio_queue())
+    monitor_task = asyncio.create_task(monitor_frame_queue())
+    
+    # We could wait here with await asyncio.gather(fill_task, monitor_task)
+    # But for non-blocking operation, we'll let them run independently
+    return processing_complete
 
 # --- Generate proactive message ---
-async def generate_proactive_message(session_id: str, user: Optional[dict]):
-    history = conversation_histories[session_id]
+async def generate_proactive_message(user: Optional[dict]):
     if user:
         dummy_vector = [0.0] * 1024
         results = pinecone_index.query(
@@ -517,8 +570,6 @@ async def generate_proactive_message(session_id: str, user: Optional[dict]):
         ]
     )
     proactive_text = proactive_response.choices[0].message.content
-    print('proactive text: ', proactive_text)
-    history.append({"role": "assistant", "content": proactive_text})
     return proactive_text
 
 # --- Finalize conversation ---
@@ -648,6 +699,9 @@ async def new_session():
     conversation_histories[session_id] = [
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
+    chat_histories[session_id] = [
+        {"role": "system", "content": SYSTEM_PROMPT}
+    ]
     return {"session_id": session_id}
 
 @app.post("/stop_playing")
@@ -659,9 +713,14 @@ async def process_message(
     pc,
     user_text,
     session_id,
-    user
+    user,
+    websocket,
+    isChat=False
 ):
-    history = conversation_histories[session_id]
+    if isChat:
+        history = chat_histories[session_id]
+    else:
+        history = conversation_histories[session_id]
 
     if user:
         results = pinecone_index.search_records(
@@ -699,7 +758,10 @@ async def process_message(
     print('psychologist response is: ', assistant_text)
     history.append({"role": "assistant", "content": assistant_text})
     
-    await stream_tts_to_webrtc(pc, assistant_text, session_id)
+    if not isChat:
+        await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket)
+    else:
+        return assistant_text
 
 @app.get("/retrieve_memories")
 async def retrieve_memories(user: dict = Depends(verify_token)):

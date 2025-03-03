@@ -43,3 +43,7 @@ body {
     transform: rotate(360deg);
   }
 }
+
+.text-areas::placeholder {
+    color: white;
+}

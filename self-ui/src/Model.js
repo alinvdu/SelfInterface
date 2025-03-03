@@ -41,7 +41,7 @@ function Model({ isPlaying }) {
   }, [isPlaying]);
 
   return (
-    <group position={[0, -1.2, 0]}>
+    <group position={[-0.05, -1.40, 0]}>
       <primitive object={scene} dispose={null} />
     </group>
   );

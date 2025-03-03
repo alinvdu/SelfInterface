@@ -7,9 +7,16 @@ import { useAuth } from "./auth/AuthContext";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 
-import { HiOutlinePhone } from "react-icons/hi2";
-import { HiOutlinePhoneXMark } from "react-icons/hi2";
+import { HiOutlinePhone, HiOutlinePhoneXMark } from "react-icons/hi2";
+import { IoEarOutline } from "react-icons/io5";
+import { BiUserVoice } from "react-icons/bi";
+import { LuBrainCog } from "react-icons/lu";
+
 import Model from "./Model.js";
+
+import LoadingDiv from "./components/LoadingDiv";
+import CollapsibleMemoriesPanel from "./components/CollapsiblePanel.js";
+import Chat from "./components/Chat.js";
 
 const api = "https://selfinterface-simple-env.up.railway.app";
 
@@ -77,7 +84,7 @@ function BackgroundScene({ isTalking }) {
         zIndex: 0,
         pointerEvents: "auto",
       }}
-      camera={{ position: [0, -0.15, 1.25], fov: 60 }}
+      camera={{ position: [0.25, -0.05, 0.6], fov: 60 }}
       gl={{ alpha: true }}
     >
       <ambientLight intensity={1.2} />
@@ -106,7 +113,6 @@ function App() {
   // Initialize WebRTC connection
   const initiateWebRTC = async () => {
     try {
-      // 1) Get local microphone track 2.
       const localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
@@ -127,53 +133,23 @@ function App() {
       ],
       });
 
-      // 2) Add the microphone track(s) to the connection
       localStream.getTracks().forEach(track => {
         peerConnectionRef.current.addTrack(track, localStream);
       });
 
-      // WebSocket for signaling
-      const wsUrl = api.replace("https", "wss").replace("http", "ws") + `/ws?token=${token}`;
-      wsRef.current = new WebSocket(wsUrl);
+      peerConnectionRef.current.addTransceiver('audio', { direction: 'recvonly' });
+      const offer = await peerConnectionRef.current.createOffer();
+      await peerConnectionRef.current.setLocalDescription(offer);
 
-      wsRef.current.onopen = async () => {
-        // Now that the WebSocket is open, create the offer
-        peerConnectionRef.current.addTransceiver('audio', { direction: 'recvonly' });
-        const offer = await peerConnectionRef.current.createOffer();
-        await peerConnectionRef.current.setLocalDescription(offer);
+      wsRef.current.send(
+        JSON.stringify({
+          type: "offer",
+          sdp: offer.sdp,
+          sessionId,
+          token,
+        })
+      );
 
-        // 4) Send the offer to the server
-        if (wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({
-              type: "offer",
-              sdp: offer.sdp,
-              sessionId,
-              token,
-            })
-          );
-        }
-      };
-
-      // 5) When we get the answer, set it as remote description
-      wsRef.current.onmessage = async (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === "answer") {
-          console.log("Received answer from server");
-          await peerConnectionRef.current.setRemoteDescription(message)
-          console.log(
-            "Client SDP:",
-            peerConnectionRef.current.remoteDescription.sdp
-          );
-        } else if (message.type === "ice-candidate") {
-          console.log("ice candidate received");
-          await peerConnectionRef.current.addIceCandidate(
-            new RTCIceCandidate(message.candidate)
-          );
-        }
-      };
-
-      // 7) Handle sending our local ICE candidates up to the server
       peerConnectionRef.current.onicecandidate = (event) => {
         console.log("ice event", event);
         if (event.candidate) {
@@ -187,11 +163,8 @@ function App() {
         }
       };
 
-      // 8) This is where we receive the **remote** TTS track
       peerConnectionRef.current.ontrack = (event) => {
         console.log('got new track')
-        // We create an audio element and attach the remote stream
-        // Keep your working playback logic
         setPhoneCalling(false);
         setConversing(true);
         const audio = new Audio();
@@ -277,32 +250,66 @@ function App() {
     }
   };
 
-  const { token, user } = useAuth();
+  const { token, user, loading } = useAuth();
   const [isTalking, setIsTalking] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [memories, setMemories] = useState([]);
   const [conversing, setConversing] = useState(false);
   const [calling, setPhoneCalling] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [chat, setChat] = useState([])
+  const [loadingChat, setLoadingChat] = useState(false)
 
   // Combined new_session and proactive message call.
   useEffect(() => {
-    const createSession = async () => {
-      if (token && !sessionId) {
-        try {
-          const res = await fetch(api + "/new_session", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          const data = await res.json();
-          setSessionId(data.session_id);
-        } catch (error) {
-          console.error("Error creating session and proactive message:", error);
-        }
-      }
-    };
-    createSession();
-  }, [token, sessionId]);
+    if (!loading) {
+      const createSession = async () => {
+        if (!sessionId) {
+          try {
+            const res = await fetch(api + "/new_session", {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            setSessionId(data.session_id);
 
-  // Fetch memories (this can remain separate)
+            const wsUrlPath = token ? `/ws?token=${token}&session_id=${data.session_id}` : '/ws?sessionId=' + sessionId
+            const wsUrl = api.replace("https", "wss").replace("http", "ws") + wsUrlPath;
+            wsRef.current = new WebSocket(wsUrl);
+
+            // 5) When we get the answer, set it as remote description
+            wsRef.current.onmessage = async (event) => {
+              const message = JSON.parse(event.data);
+              if (message.type === "answer") {
+                await peerConnectionRef.current.setRemoteDescription(message)
+                console.log(
+                  "Client SDP:",
+                  peerConnectionRef.current.remoteDescription.sdp
+                );
+              } else if (message.type === "ice-candidate") {
+                await peerConnectionRef.current.addIceCandidate(
+                  new RTCIceCandidate(message.candidate)
+                );
+              } else if (message.type === "PROCESSING") {
+                setProcessing(true);
+              } else if (message.type === "FINISHED_PROCESSING") {
+                setProcessing(false);
+              } else if (message.type === "CHAT_MESSAGE") {
+                setChat(chat => [...chat, {
+                  "role": "assistant",
+                  "content": message.message
+                }])
+                setLoadingChat(false)
+              }
+            };
+          } catch (error) {
+            console.error("Error creating session and proactive message:", error);
+          }
+        }
+      };
+      createSession();
+    }
+  }, [loading]);
+
   useEffect(() => {
     const fetchMemories = async () => {
       try {
@@ -331,11 +338,14 @@ function App() {
     }
   };
 
-  // Status text: show "Atlas is thinking..." if proactive loading or process_audio is pending,
-  // "Atlas is speaking..." if audio is playing, otherwise "Ready to record".
+  const renderActivityIcon = () => {
+    if (processing) {
+      return <LuBrainCog style={{fontSize: 21}} />
+    }
 
-  // Fixed panel background.
-  const panelBackground = "rgba(0, 0, 0, 0.45)";
+    return <IoEarOutline style={{fontSize: 21}} />
+  }
+
 
   return (
     <div
@@ -347,12 +357,33 @@ function App() {
       }}
     >
       <BackgroundScene isTalking={isTalking} />
-
+      <div style={{
+          position: "absolute",
+          top: "10px",
+          left: "10px",
+          zIndex: 2,
+          background: 'rgba(0, 0, 0, 0.25)',
+          "backdrop-filter": "blur(8px)",
+          "-webkit-backdrop-filter": "blur(8px)",
+          border: "1px solid rgba(255, 255, 255, 0.35)",
+          borderRadius: "21px",
+          padding: "0.7rem 2rem",
+          color: "white",
+          fontSize: "23px",
+          width: 140,
+          height: 40,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-start"
+        }}>
+          <img style={{ width: 55 }} src="selfai-logo.png" />
+          <span style={{marginLeft: 10}}>Self AI</span>
+      </div>
       <div
         style={{
           position: "absolute",
-          top: "18%",
-          left: "50%",
+          top: "100px",
+          left: "53%",
           transform: "translate(-50%, -50%)",
           zIndex: 2,
           background: 'rgba(0, 0, 0, 0.25)',
@@ -368,12 +399,12 @@ function App() {
         Atlas
       </div>
 
+      {!loading &&
       <div
         style={{
           position: "absolute",
-          top: "20px",
-          right: user ? "20px" : "50%",
-          transform: user ? "" : "translateX(50%)",
+          top: "10px",
+          right: "20px",
           zIndex: 2,
           background: 'rgba(0, 0, 0, 0.25)',
           "backdrop-filter": "blur(15px)",
@@ -386,48 +417,83 @@ function App() {
         }}
       >
         <LoginButton />
-      </div>
-      {token && (
-        <div
-          style={{
-            position: "absolute",
-            top: "20px",
-            left: "20px",
-            bottom: "20px",
-            zIndex: 2,
-            width: "300px",
-            paddingBottom: 15,
-          }}
-        >
-          <div
-            style={{
-              "backdrop-filter": "blur(12px)",
-              "-webkit-backdrop-filter": "blur(12px)",
-              background: 'rgba(0, 0, 0, 0.25)',
-              border: "1px solid rgba(255, 255, 255, 0.35)",
-              borderRadius: "16px",
-              padding: "21px",
-              width: "100%",
-              maxHeight: "95%",
-              overflowY: "auto",
-              color: "white",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-start",
-            }}
+      </div>}
+      <div style={{
+        position: "absolute",
+        top: "100px",
+        left: "10px",
+        bottom: "20px",
+      }}>
+          <CollapsibleMemoriesPanel
+            token={token}
+            requiresAccount
+            memories={memories}
+            MemoryCard={MemoryCard}
+            title="Memories"
           >
-            <>
-              <div style={{ marginTop: 0, fontSize: 21, marginBottom: 15, borderRadius: 6 }}>
-                Memories
-              </div>
-              {memories &&
+            {memories &&
                 memories.map((memory, i) => (
                   <MemoryCard key={i} memory={memory} />
                 ))}
-            </>
-          </div>
-        </div>
-      )}
+          </CollapsibleMemoriesPanel>
+          <CollapsibleMemoriesPanel
+            memories={[]}
+            MemoryCard={() => {}}
+            title="Chat"
+            openedByDefault
+            canBeToggled={!conversing}
+          >
+            <div style={{
+              position: "relative",
+              width: "100%",
+              height: "100%",
+              minHeight: 20
+            }}>
+              <div style={{
+                position: "absolute",
+                width: "100%",
+                height: 1,
+                background: "rgba(255, 255, 255, 0.25)"
+              }} />
+              {!chat || !chat.length ?
+              <div style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingTop: 15
+              }}>
+                <LoadingDiv
+                  isLoading 
+                  duration={0.75} 
+                  width={`${25}px`}
+                  height={`${25}px`}
+                  borderWidth={1}
+                  loadingColor="#FFFFFF"
+                  borderColor="rgba(255, 255, 255, 0.5)"
+                  borderRadius={`${10}px`}
+                  backgroundColor="transparent"
+                  loadingSegmentPercentage={25}
+                />
+              </div>
+              : <Chat chat={chat} onSendMessage={message => {
+                if (wsRef.current) {
+                  setChat([...chat, {
+                    "role": "user",
+                    "content": message
+                  }])
+
+                  wsRef.current.send(JSON.stringify({
+                    "type": "CHAT_MESSAGE",
+                    "message": message
+                  }))
+
+                  setLoadingChat(true);
+                }
+              }} isLoading={loadingChat} />}
+            </div>
+          </CollapsibleMemoriesPanel>
+      </div>
       <div
         style={{
           position: "absolute",
@@ -442,8 +508,7 @@ function App() {
           borderRadius: "46px",
           color: "white",
           textAlign: "center",
-          padding: "0.8rem",
-          maxWidth: "250px"
+          maxWidth: "280px"
         }}
       >
         {!conversing ? (
@@ -452,29 +517,27 @@ function App() {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            padding: 12
           }} onClick={() => {
             setPhoneCalling(true)
             initiateWebRTC()
           }}>
-            <button
-              style={{
-                background: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.5)',
-                color: "white",
-                borderRadius: "50%",
-                padding: "10px",
-                fontSize: "1.6rem",
-                cursor: "pointer",
-                lineHeight: '17px',
-                width: 46,
-                height: 46
-              }}
-              aria-label="Start Atlas session"
+            <LoadingDiv
+              isLoading={calling} 
+              duration={0.75} 
+              width={`${46}px`}
+              height={`${46}px`}
+              borderWidth={1}
+              loadingColor="#FFFFFF"
+              borderColor="rgba(255, 255, 255, 0.5)"
+              borderRadius={`${46}px`}
+              backgroundColor="transparent"
+              loadingSegmentPercentage={25}
             >
-              <HiOutlinePhone />
-            </button>
-            <div style={{ marginLeft: "1rem", marginRight: "0.5rem", fontSize: "18px" }}>Let's Talk</div>
+              <HiOutlinePhone style={{ fontSize: 21 }} />
+            </LoadingDiv>
+            <div style={{ marginLeft: "1rem", marginRight: "0.5rem", fontSize: "18px" }}>{calling ? "Calling Atlas..." : "Let's Talk"}</div>
           </div>
         ) : (
           <div style={{
@@ -482,29 +545,28 @@ function App() {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            padding: 12
           }} onClick={() => {
             setPhoneCalling(true)
             initiateWebRTC()
           }}>
-            <div style={{ marginRight: "1rem", marginLeft: "0.5rem", fontSize: "18px" }}>Talking...</div>
-            <button
-              style={{
-                background: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.5)',
-                color: "white",
-                borderRadius: "50%",
-                padding: "10px",
-                fontSize: "1.6rem",
-                cursor: "pointer",
-                lineHeight: '17px',
-                width: 46,
-                height: 46
-              }}
-              aria-label="Start Atlas session"
+            <div style={{ marginRight: "1rem", marginLeft: "0.5rem", fontSize: "18px" }}>{processing ? "Processing thoughts" : "I'm listening..."}</div>
+            <LoadingDiv
+              isLoading={processing} 
+              duration={0.75} 
+              width={`${46}px`}
+              height={`${46}px`}
+              borderWidth={1}
+              loadingColor="#FFFFFF"
+              borderColor="rgba(255, 255, 255, 0.5)"
+              borderRadius={`${46}px`}
+              backgroundColor="transparent"
+              loadingSegmentPercentage={25}
+              isGlowing
             >
-              <HiOutlinePhoneXMark />
-            </button>
+              {renderActivityIcon()}
+            </LoadingDiv>
           </div>
         )}
       </div>
