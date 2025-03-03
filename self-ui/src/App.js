@@ -118,7 +118,7 @@ function App() {
       });
 
       peerConnectionRef.current = new RTCPeerConnection({
-        // iceTransportPolicy: "relay",
+        iceTransportPolicy: "relay",
         iceServers: [
           {
             urls: "turn:global.relay.metered.ca:80?transport=tcp",
