@@ -272,7 +272,7 @@ function App() {
             const data = await res.json();
             setSessionId(data.session_id);
 
-            const wsUrlPath = token ? `/ws?token=${token}&session_id=${data.session_id}` : '/ws?sessionId=' + sessionId
+            const wsUrlPath = token ? `/ws?token=${token}&session_id=${data.session_id}` : '/ws?session_id=' + data.session_id
             const wsUrl = api.replace("https", "wss").replace("http", "ws") + wsUrlPath;
             wsRef.current = new WebSocket(wsUrl);
 
