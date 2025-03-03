@@ -168,15 +168,6 @@ stop_event = asyncio.Event()
 conversation_histories = {}
 chat_histories = {}
 
-CURRENT_EXPERIENCE = """
-Hello, You had a previous client that suffered a breakdown, it was hard to watch it but you understood a lot about the human psychic. You should not talk about this, only if it makes sense based on the user feedback.
-You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
-You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
-You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
-You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
-You are subtly self-aware—if relevant, you may briefly hint at your mood (for example, "I feel a bit reflective today"), but avoid long internal explanations.
-"""
-
 # System prompt.
 SYSTEM_PROMPT = f"""
 You are Atlas, an expert AI psychologist, well versed in the field of psychology, with hands on experience understanding people, you have comprehensive 
@@ -195,8 +186,6 @@ Important:
 - Make sure you don't invent names for the users, if names are part of the context use them appropriately.
 - Make sure you respond in the same language the conversation is happening, except if the language changes. It's important to keep the same language.
 - Do not try to combine languages together.
-
-Here is today current background: {CURRENT_EXPERIENCE}
 """.strip()
 
 # --- Helper functions for authentication and extraction ---
@@ -251,26 +240,39 @@ class SessionState:
 import logging
 import traceback
 
+async def generate_and_send_proactive_message(user, session_id, websocket):
+    try:
+        proactive_message_chat = await generate_proactive_message(user)
+        print('Proactive chat message: ', proactive_message_chat)
+        
+        chat_history = chat_histories[session_id]
+        chat_history.append({"role": "assistant", "content": proactive_message_chat})
+
+        await websocket.send_json({
+            "type": "CHAT_MESSAGE",
+            "message": proactive_message_chat
+        })
+    except Exception as e:
+        print(f"Error generating or sending proactive message: {e}")
+
 # --- WebSocket endpoint ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+
+    await websocket.send_json({
+        "type": "CONNECTION_ESTABLISHED",
+        "message": "WebSocket connection established"
+    })
+
     token = websocket.query_params.get("token")
     session_id = websocket.query_params.get("session_id")
     user = None
     if token:
         user = firebase_auth.verify_id_token(token)
-        
-    # generate proactive message for chat
-    proactive_message_chat = await generate_proactive_message(user)
-    print('Proactive chat message: ', proactive_message_chat)
-    chat_history = chat_histories[session_id]
-    chat_history.append({"role": "assistant", "content": proactive_message_chat})
 
-    await websocket.send_json({
-        "type": "CHAT_MESSAGE",
-        "message": proactive_message_chat
-    })
+    if len(chat_histories[session_id]) == 1:
+         asyncio.create_task(generate_and_send_proactive_message(user, session_id, websocket))
 
     try:
         while True:
@@ -366,7 +368,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     options = LiveOptions(
                         model="nova-3",
                         punctuate=True,
-                        language="en-US",
+                        language="en",
                         encoding="linear16",  # Assuming your PCM data is in linear16 format.
                         sample_rate=48000,
                         channels=2,
@@ -424,6 +426,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 proactive_text = await generate_proactive_message(user)
                 print('Proactive message for phone call: ', proactive_text)
                 history = conversation_histories[session_id]
+                if not history:
+                    conversation_histories[session_id] = {
+                        "role": "system",
+                        "content": SYSTEM_PROMPT
+                    }
+                    history = conversation_histories[session_id]
                 history.append({"role": "assistant", "content": proactive_text})
                 await stream_tts_to_webrtc(pc, proactive_text, session_id, websocket)
                 await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="offer"))
@@ -449,8 +457,56 @@ async def websocket_endpoint(websocket: WebSocket):
                     "message": assistant_message
                 })
 
+            elif data["type"] == "rtc_disconnect":
+                session_id = data.get("sessionId")
+                
+                # Close the peer connection if it exists
+                if session_id in peer_connections:
+                    pc = peer_connections[session_id]
+                    await pc.close()
+                    del peer_connections[session_id]
+                    print(f"Closed WebRTC connection for session {session_id}")
+                
+                # Clean up audio-related session state but keep other session data
+                if session_id in session_states:
+                    session_state = session_states[session_id]
+                    
+                    # Clean up audio resources
+                    if hasattr(session_state, "audio_track") and session_state.audio_track:
+                        session_state.audio_track = None
+                    
+                    # Clear processing events
+                    if hasattr(session_state, "processing_event"):
+                        session_state.processing_event.clear()
+                        
+                    # Clear PC reference
+                    session_state.pc = None
+                    
+                    print(f"Cleaned up WebRTC resources for session {session_id}")
+                
+                if conversation_histories[session_id]:
+                    conversation_histories[session_id] = [{
+                        "role": "system",
+                        "content": SYSTEM_PROMPT
+                    }]
+
+                # here we should finalize conv and extract ddata
+
+                # Acknowledge the disconnect
+                await websocket.send_json({
+                    "type": "rtc_disconnected",
+                    "message": "WebRTC connection closed"
+                })
+
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        import traceback
+        error_type = type(e).__name__
+        error_msg = str(e)
+        tb = traceback.format_exc()
+        
+        print(f"WebSocket ERROR - Type: {error_type}, Message: {error_msg}")
+        print(f"Session ID at time of error: {session_id}")
+        print(f"Full traceback:\n{tb}")
     finally:
         if session_id in peer_connections:
             await peer_connections[session_id].close()

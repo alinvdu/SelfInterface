@@ -7,9 +7,13 @@ const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, mem
   const [isExpanded, setIsExpanded] = useState(openedByDefault);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  const toggleExpand = () => {
+  const toggleExpand = (overrideValue) => {
     setIsAnimating(true);
-    setIsExpanded(!isExpanded);
+    if (overrideValue !== undefined) {
+      setIsExpanded(undefined);
+    } else {
+      setIsExpanded(!isExpanded);
+    }
     
     // Reset animation state after animation completes
     setTimeout(() => {
@@ -19,22 +23,23 @@ const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, mem
 
   useEffect(() => {
     if (!canBeToggled) {
-        toggleExpand(false);
+        setIsExpanded(false)
     }
   }, [canBeToggled])
 
   return (
     <div
       style={{
-        width: isExpanded ? "300px" : "200px",
+        width: isExpanded ? "350px" : "200px",
         marginBottom: "10px",
         transition: "width 0.3s ease-in-out",
         zIndex: 2,
         cursor: !isExpanded ? "pointer" : "default",
         perspective: "500px",
-        maxHeight: "50%"
+        maxHeight: "50%",
+        display: "flex"
       }}
-      onClick={!isExpanded && canBeToggled ? toggleExpand : null}
+      onClick={!isExpanded && canBeToggled ? () => toggleExpand() : null}
     >
         <div
         style={{
@@ -86,7 +91,7 @@ const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, mem
                   opacity: 0.8,
                   transition: "opacity 0.2s",
                 }}
-                onClick={toggleExpand}
+                onClick={() => toggleExpand()}
                 onMouseOver={(e) => e.currentTarget.style.opacity = 1}
                 onMouseOut={(e) => e.currentTarget.style.opacity = 0.8}
               >

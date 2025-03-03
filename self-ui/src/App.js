@@ -118,7 +118,7 @@ function App() {
       });
 
       peerConnectionRef.current = new RTCPeerConnection({
-        iceTransportPolicy: "relay",
+        // iceTransportPolicy: "relay",
         iceServers: [
           {
             urls: "turn:global.relay.metered.ca:80?transport=tcp",
@@ -238,12 +238,12 @@ function App() {
           }
 
             if (audioContext.state !== 'closed') {
-                requestAnimationFrame(checkAudioActivity);
+              animationFrameIdRef.current = requestAnimationFrame(checkAudioActivity);
             }
         };
 
         // Start analysis
-        requestAnimationFrame(checkAudioActivity);
+        animationFrameIdRef.current = requestAnimationFrame(checkAudioActivity);
       };
     } catch (error) {
       console.error("Error initiating WebRTC:", error);
@@ -259,6 +259,63 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [chat, setChat] = useState([])
   const [loadingChat, setLoadingChat] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false);
+  const animationFrameIdRef = useRef(null);
+  const [isWsOpen, toggleWsOpen] = useState(false);
+
+  const createAndConnectWs = (currentSessionId, currentToken) => {
+    const wsUrlPath = currentToken ? `/ws?token=${currentToken}&session_id=${currentSessionId}` : '/ws?session_id=' + currentSessionId
+    const wsUrl = api.replace("https", "wss").replace("http", "ws") + wsUrlPath;
+    wsRef.current = new WebSocket(wsUrl);
+
+    // 5) When we get the answer, set it as remote description
+    wsRef.current.onmessage = async (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "answer") {
+        await peerConnectionRef.current.setRemoteDescription(message)
+        console.log(
+          "Client SDP:",
+          peerConnectionRef.current.remoteDescription.sdp
+        );
+      } else if (message.type === "ice-candidate") {
+        await peerConnectionRef.current.addIceCandidate(
+          new RTCIceCandidate(message.candidate)
+        );
+      } else if (message.type === "PROCESSING") {
+        setProcessing(true);
+      } else if (message.type === "FINISHED_PROCESSING") {
+        setProcessing(false);
+      } else if (message.type === "CHAT_MESSAGE") {
+        setChat(chat => [...chat, {
+          "role": "assistant",
+          "content": message.message
+        }])
+        setLoadingChat(false)
+      } else if (message.type === "rtc_disconnected") {
+        setDisconnecting(false);
+        setConversing(false);
+        setPhoneCalling(false);
+        setIsTalking(false);
+        setProcessing(false);
+      }
+    };
+
+    wsRef.current.onopen = () => {
+      toggleWsOpen(true);
+    }
+
+    wsRef.current.onclose = () => {
+      toggleWsOpen(false);
+      setDisconnecting(false);
+      setConversing(false);
+      setPhoneCalling(false);
+      setIsTalking(false);
+      setProcessing(false);
+      setTimeout(() => {
+        createAndConnectWs(currentSessionId, currentToken)
+      }, 500)
+    }
+  }
 
   // Combined new_session and proactive message call.
   useEffect(() => {
@@ -272,35 +329,7 @@ function App() {
             const data = await res.json();
             setSessionId(data.session_id);
 
-            const wsUrlPath = token ? `/ws?token=${token}&session_id=${data.session_id}` : '/ws?session_id=' + data.session_id
-            const wsUrl = api.replace("https", "wss").replace("http", "ws") + wsUrlPath;
-            wsRef.current = new WebSocket(wsUrl);
-
-            // 5) When we get the answer, set it as remote description
-            wsRef.current.onmessage = async (event) => {
-              const message = JSON.parse(event.data);
-              if (message.type === "answer") {
-                await peerConnectionRef.current.setRemoteDescription(message)
-                console.log(
-                  "Client SDP:",
-                  peerConnectionRef.current.remoteDescription.sdp
-                );
-              } else if (message.type === "ice-candidate") {
-                await peerConnectionRef.current.addIceCandidate(
-                  new RTCIceCandidate(message.candidate)
-                );
-              } else if (message.type === "PROCESSING") {
-                setProcessing(true);
-              } else if (message.type === "FINISHED_PROCESSING") {
-                setProcessing(false);
-              } else if (message.type === "CHAT_MESSAGE") {
-                setChat(chat => [...chat, {
-                  "role": "assistant",
-                  "content": message.message
-                }])
-                setLoadingChat(false)
-              }
-            };
+            createAndConnectWs(data.session_id, token)
           } catch (error) {
             console.error("Error creating session and proactive message:", error);
           }
@@ -346,6 +375,120 @@ function App() {
     return <IoEarOutline style={{fontSize: 21}} />
   }
 
+  const handleDisconnect = async () => {
+    if (!sessionId) return;
+    
+    setDisconnecting(true);
+    
+    try {
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+      }
+
+      // Close local tracks
+      if (peerConnectionRef.current) {
+        const senders = peerConnectionRef.current.getSenders();
+        senders.forEach(sender => {
+          if (sender.track) {
+            sender.track.stop();
+          }
+        });
+        
+        // Close the peer connection
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      
+      // Reset audio context
+      if (audioContextRef.current) {
+        await audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      
+      if (analyserRef.current) {
+        analyserRef.current = null;
+      }
+      
+      // Tell the server to clean up this session's connections - we are not really disconnecting everything
+      // Tell the server to clean up this session's WebRTC connection
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: "rtc_disconnect",
+          sessionId
+        }));
+      }
+    } catch (error) {
+      console.error("Error during disconnection:", error);
+      setDisconnecting(false);
+    }
+  };
+
+  const renderConversing = () => {
+    if (!isWsOpen) {
+      return null
+    }
+
+    if (!conversing) {
+      return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          padding: 12
+        }} onClick={() => {
+          setPhoneCalling(true)
+          initiateWebRTC()
+        }}>
+          <LoadingDiv
+            isLoading={calling} 
+            duration={0.75} 
+            width={`${46}px`}
+            height={`${46}px`}
+            borderWidth={1}
+            loadingColor="#FFFFFF"
+            borderColor="rgba(255, 255, 255, 0.5)"
+            borderRadius={`${46}px`}
+            backgroundColor="transparent"
+            loadingSegmentPercentage={25}
+          >
+            <HiOutlinePhone style={{ fontSize: 21 }} />
+          </LoadingDiv>
+          <div style={{ marginLeft: "1rem", marginRight: "0.5rem", fontSize: "18px" }}>{calling ? "Calling Atlas..." : "Let's Talk"}</div>
+        </div>
+      )
+    }
+  
+    return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          padding: 12
+        }}>
+          <div style={{ marginRight: "1rem", marginLeft: "0.5rem", fontSize: "18px" }}>{processing ? "Processing thoughts" : "I'm listening..."}</div>
+          <LoadingDiv
+            isLoading={processing} 
+            duration={0.75} 
+            width={`${46}px`}
+            height={`${46}px`}
+            borderWidth={1}
+            loadingColor="#FFFFFF"
+            borderColor="rgba(255, 255, 255, 0.5)"
+            borderRadius={`${46}px`}
+            backgroundColor="transparent"
+            loadingSegmentPercentage={25}
+            isGlowing
+          >
+            {renderActivityIcon()}
+          </LoadingDiv>
+        </div>
+    )
+  }
 
   return (
     <div
@@ -441,7 +584,7 @@ function App() {
             MemoryCard={() => {}}
             title="Chat"
             openedByDefault
-            canBeToggled={!conversing}
+            canBeToggled={!conversing && !calling}
           >
             <div style={{
               position: "relative",
@@ -455,7 +598,7 @@ function App() {
                 height: 1,
                 background: "rgba(255, 255, 255, 0.25)"
               }} />
-              {!chat || !chat.length ?
+              {!chat || !chat.length || !isWsOpen ?
               <div style={{
                 width: '100%',
                 display: 'flex',
@@ -494,82 +637,80 @@ function App() {
             </div>
           </CollapsibleMemoriesPanel>
       </div>
-      <div
-        style={{
-          position: "absolute",
-          bottom: "50px",
-          right: "50%",
-          transform: "translateX(50%)",
-          zIndex: 2,
-          "backdrop-filter": "blur(8px)",
-          "-webkit-backdrop-filter": "blur(8px)",
-          background: 'rgba(0, 0, 0, 0.25)',
-          border: "1px solid rgba(255, 255, 255, 0.4)",
-          borderRadius: "46px",
-          color: "white",
-          textAlign: "center",
-          maxWidth: "280px"
-        }}
-      >
-        {!conversing ? (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            padding: 12
-          }} onClick={() => {
-            setPhoneCalling(true)
-            initiateWebRTC()
-          }}>
-            <LoadingDiv
-              isLoading={calling} 
-              duration={0.75} 
-              width={`${46}px`}
-              height={`${46}px`}
-              borderWidth={1}
-              loadingColor="#FFFFFF"
-              borderColor="rgba(255, 255, 255, 0.5)"
-              borderRadius={`${46}px`}
-              backgroundColor="transparent"
-              loadingSegmentPercentage={25}
-            >
-              <HiOutlinePhone style={{ fontSize: 21 }} />
-            </LoadingDiv>
-            <div style={{ marginLeft: "1rem", marginRight: "0.5rem", fontSize: "18px" }}>{calling ? "Calling Atlas..." : "Let's Talk"}</div>
+      <div style={{
+        position: "absolute",
+        bottom: "50px",
+        right: "50%",
+        display: "flex",
+        transform: "translateX(50%)",
+      }}>
+        <div
+          style={{
+            zIndex: 2,
+            "backdrop-filter": "blur(8px)",
+            "-webkit-backdrop-filter": "blur(8px)",
+            background: 'rgba(0, 0, 0, 0.25)',
+            border: "1px solid rgba(255, 255, 255, 0.4)",
+            borderRadius: "46px",
+            color: "white",
+            textAlign: "center",
+            minWidth: 140,
+            minHeight: 60
+          }}
+        >
+          {!isWsOpen && <div style={{
+              width: '100%',
+              height: '100%',
+              alignItems: 'center',
+              justifyItems: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <LoadingDiv
+                isLoading 
+                duration={0.75} 
+                width={`${25}px`}
+                height={`${25}px`}
+                borderWidth={1}
+                loadingColor="#FFFFFF"
+                borderColor="rgba(255, 255, 255, 0.5)"
+                borderRadius={`${10}px`}
+                backgroundColor="transparent"
+                loadingSegmentPercentage={25}
+              />
+            </div>}
+            {renderConversing()}
           </div>
-        ) : (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            padding: 12
-          }} onClick={() => {
-            setPhoneCalling(true)
-            initiateWebRTC()
-          }}>
-            <div style={{ marginRight: "1rem", marginLeft: "0.5rem", fontSize: "18px" }}>{processing ? "Processing thoughts" : "I'm listening..."}</div>
-            <LoadingDiv
-              isLoading={processing} 
-              duration={0.75} 
-              width={`${46}px`}
-              height={`${46}px`}
-              borderWidth={1}
-              loadingColor="#FFFFFF"
-              borderColor="rgba(255, 255, 255, 0.5)"
-              borderRadius={`${46}px`}
-              backgroundColor="transparent"
-              loadingSegmentPercentage={25}
-              isGlowing
+          {conversing && (
+            <div style={{
+                "backdrop-filter": "blur(8px)",
+                "-webkit-backdrop-filter": "blur(8px)",
+                background: 'rgba(0, 0, 0, 0.25)',
+                border: "1px solid rgba(255, 255, 255, 0.4)",
+                padding: 12,
+                borderRadius: 46,
+                marginLeft: 10,
+                cursor: "pointer"
+              }}
+              onClick={handleDisconnect}
             >
-              {renderActivityIcon()}
+              <LoadingDiv
+                isLoading={disconnecting} 
+                duration={0.75}
+                width={`${46}px`}
+                height={`${46}px`}
+                borderWidth={1}
+                loadingColor="#FFFFFF"
+                borderColor="rgba(255, 255, 255, 0.5)"
+                borderRadius={`${46}px`}
+                backgroundColor="#ed7878"
+                loadingSegmentPercentage={25}
+              >
+              <HiOutlinePhoneXMark style={{fontSize: 21}} />
             </LoadingDiv>
-          </div>
-        )}
-      </div>
+          </div>)}
+        </div>
     </div>
   );
 }
