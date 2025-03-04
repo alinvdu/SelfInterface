@@ -174,6 +174,8 @@ const LoadingDiv = ({
   const outerContainerStyle = {
     width: formatSize(width),
     height: formatSize(height),
+    minWidth: formatSize(width),
+    minHeight: formatSize(height),
     position: 'relative'
   };
   

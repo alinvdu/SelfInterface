@@ -1,14 +1,14 @@
 import React from "react";
 import { useAuth } from "./../auth/AuthContext";
 
-const LoginButton = () => {
+const LoginButton = ({ isMobile }) => {
   const { user, signInWithGoogle, logout } = useAuth();
 
   return (
     <div>
       {user ? (
         <div>
-          <span>Welcome, {user.displayName}!</span>
+          {!isMobile && <span>Welcome, {user.displayName}!</span>}
           <button style={{
             marginLeft: 10,
             padding: "5px 15px",

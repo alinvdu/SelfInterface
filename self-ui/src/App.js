@@ -118,7 +118,7 @@ function App() {
       });
 
       peerConnectionRef.current = new RTCPeerConnection({
-        iceTransportPolicy: "relay",
+        // iceTransportPolicy: "relay",
         iceServers: [
           {
             urls: "turn:global.relay.metered.ca:80?transport=tcp",
@@ -263,6 +263,19 @@ function App() {
   const animationFrameIdRef = useRef(null);
   const [isWsOpen, toggleWsOpen] = useState(false);
 
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const isMobile = windowWidth < 786;
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const createAndConnectWs = (currentSessionId, currentToken) => {
     const wsUrlPath = currentToken ? `/ws?token=${currentToken}&session_id=${currentSessionId}` : '/ws?session_id=' + currentSessionId
     const wsUrl = api.replace("https", "wss").replace("http", "ws") + wsUrlPath;
@@ -353,19 +366,6 @@ function App() {
     };
     if (token) fetchMemories();
   }, [token]);
-
-  const finalizeConversation = async () => {
-    if (sessionId && token) {
-      try {
-        await fetch(api + `/finalize_conversation?session_id=${sessionId}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch (error) {
-        console.error("Error finalizing session:", error);
-      }
-    }
-  };
 
   const renderActivityIcon = () => {
     if (processing) {
@@ -514,18 +514,18 @@ function App() {
           color: "white",
           fontSize: "23px",
           width: 140,
-          height: 40,
+          height: 35,
           display: "flex",
           alignItems: "center",
           justifyContent: "flex-start"
         }}>
-          <img style={{ width: 55 }} src="selfai-logo.png" />
+          <img style={{ width: 50 }} src="selfai-logo.png" />
           <span style={{marginLeft: 10}}>Self AI</span>
       </div>
       <div
         style={{
           position: "absolute",
-          top: "100px",
+          top: "110px",
           left: "53%",
           transform: "translate(-50%, -50%)",
           zIndex: 2,
@@ -559,13 +559,13 @@ function App() {
           fontSize: 17
         }}
       >
-        <LoginButton />
+        <LoginButton isMobile={isMobile} />
       </div>}
       <div style={{
         position: "absolute",
-        top: "100px",
+        top: isMobile ? "150px" : "100px",
         left: "10px",
-        bottom: "20px",
+        bottom: isMobile ? "150px" : "20px",
       }}>
           <CollapsibleMemoriesPanel
             token={token}
@@ -583,7 +583,7 @@ function App() {
             memories={[]}
             MemoryCard={() => {}}
             title="Chat"
-            openedByDefault
+            openedByDefault={!isMobile}
             canBeToggled={!conversing && !calling}
           >
             <div style={{

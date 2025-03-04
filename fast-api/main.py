@@ -19,6 +19,8 @@ import time
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
 import logging
+import random
+import copy
 
 # Configure logging
 # logging.basicConfig(
@@ -168,6 +170,20 @@ stop_event = asyncio.Event()
 conversation_histories = {}
 chat_histories = {}
 
+empathetic_greetings = [
+    "Hi there, I'm here to listen, how can I support you today?",
+    "Hello, I'm glad you're here. What's on your mind?",
+    "Hey, it's okay to feel however you're feeling, I'm here for you.",
+    "Hi, I'm here to help you through this. Where would you like to start?",
+    "Hello, I'm ready to hear you, what's going on?",
+    "Hey, I'm here for you. How are you feeling right now?",
+    "Hello, I'm here to listen and support you. How are you?",
+    "Hi, ready to talk? What's on your mind?",
+    "Hello, I'm listening. How are things lately?",
+    "Hi, I'm here to talk. How you holding up?",
+    "Hello, I'm here if you want to talk. How's it going?"
+]
+
 # System prompt.
 SYSTEM_PROMPT = f"""
 You are Atlas, an expert AI psychologist, well versed in the field of psychology, with hands on experience understanding people, you have comprehensive 
@@ -242,7 +258,7 @@ import traceback
 
 async def generate_and_send_proactive_message(user, session_id, websocket):
     try:
-        proactive_message_chat = await generate_proactive_message(user)
+        proactive_message_chat = random.choice(empathetic_greetings)
         print('Proactive chat message: ', proactive_message_chat)
         
         chat_history = chat_histories[session_id]
@@ -366,9 +382,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     # Set up Deepgram options matching your audio format.
                     options = LiveOptions(
-                        model="nova-3",
+                        model="nova-2",
+                        language="multi",
                         punctuate=True,
-                        language="en",
                         encoding="linear16",  # Assuming your PCM data is in linear16 format.
                         sample_rate=48000,
                         channels=2,
@@ -423,7 +439,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         audio_queue.put(None)
                         sender_thread.join()
 
-                proactive_text = await generate_proactive_message(user)
+                proactive_text = random.choice(empathetic_greetings)
                 print('Proactive message for phone call: ', proactive_text)
                 history = conversation_histories[session_id]
                 if not history:
@@ -459,6 +475,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif data["type"] == "rtc_disconnect":
                 session_id = data.get("sessionId")
+
+                # here we should finalize conv and extract ddata
+                asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
                 
                 # Close the peer connection if it exists
                 if session_id in peer_connections:
@@ -490,8 +509,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": SYSTEM_PROMPT
                     }]
 
-                # here we should finalize conv and extract ddata
-
                 # Acknowledge the disconnect
                 await websocket.send_json({
                     "type": "rtc_disconnected",
@@ -508,9 +525,21 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"Session ID at time of error: {session_id}")
         print(f"Full traceback:\n{tb}")
     finally:
+        print(f"WebSocket connection closed for session {session_id}")
+
         if session_id in peer_connections:
             await peer_connections[session_id].close()
             del peer_connections[session_id]
+        
+        if session_id in conversation_histories and len(conversation_histories[session_id]) > 3:
+            print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for conversation")
+            asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
+
+        if session_id in chat_histories and len(chat_histories[session_id]) > 3:
+            print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for chat")
+            asyncio.create_task(finalize_conversation(copy.deepcopy(chat_histories[session_id]), user))
+            
+        
     # except Exception as e:
     #     logger.error(f"WebSocket error in session {session_id}: {str(e)}", exc_info=True)
     #     await websocket.close(code=1011, reason=f"Server error: {str(e)}")
@@ -628,16 +657,21 @@ async def generate_proactive_message(user: Optional[dict]):
     proactive_text = proactive_response.choices[0].message.content
     return proactive_text
 
-# --- Finalize conversation ---
-@app.post("/finalize_conversation")
+def extract_json_from_markdown(text):
+    import re
+    if '```json' in text or '``` json' in text:
+        pattern = r'```\s*json\s*(.*?)```'
+        matches = re.findall(pattern, text, re.DOTALL)
+        
+        if matches:
+            return matches[0].strip()
+    return text.strip()
+
 async def finalize_conversation(
-    session_id: str = Query(...),
-    user: dict = Depends(verify_token)
+    conversation,
+    user: dict = None
 ):
-    if session_id not in conversation_histories:
-        return JSONResponse(content={"message": "Session not found."}, status_code=404)
-    
-    conversation = conversation_histories[session_id]
+    print('calling finalize conv')
     filtered_messages = []
     for msg in conversation:
         if msg["role"] == "system":
@@ -646,108 +680,147 @@ async def finalize_conversation(
             if msg["content"].startswith("MEMORY_INJECTION:"):
                 continue
         filtered_messages.append(msg)
-    
+
     conversation_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_messages])
-    
-    extraction_prompt = (
-        "Based on the following onversation"
-        "extract key psychoanalytic about the user only. Focus on these areas: Psychological Profile, Family/Social Interactions, "
-        "Emotional States, Cognitive Architecture and Experiences. For each category, output a JSON object with keys:\n"
-        "- 'category': one of ['psychological_profile', 'family', 'emotional_state', 'cognitive_architecture', 'experiences']\n"
-        "- 'text': a concise description of the insight.\n"
-        "Format your output as a JSON array. Do not duplicate the information, if one insight is used for one category do not use it for others, it's fine to leave out categories\n\n"
-        "Conversation:\n\n" + conversation_text
+
+    # First and foremost, determine if the conversation is worth storing
+    worth_storing_prompt = (
+        "Analyze the following conversation for a process that wants to extract psychoanalytic profile and conversation summary.\n"
+        "The conversation should be stored if:\n"
+        "The conversation is meaningful beyond basic chit-chat, app usage, or questions about the application or the bot that personifies the application\n"
+        "Return a JSON with the following structure:\n\n"
+        """
+        {
+            "extraction": boolean,  # must be true or false
+            "summarization": boolean  # must be true or false
+        }
+        """
+        "\n\nConversation:\n\n" + conversation_text
     )
     
-    extraction_response = client.chat.completions.create(
+    worth_storing_response = client.chat.completions.create(
         model=model_version_extraction,
         messages=[
-            {"role": "system", "content": "You are an expert psychoanalyst extracting insights."},
-            {"role": "user", "content": extraction_prompt}
+            {"role": "system", "content": "You are an expert at evaluating conversation quality and psychological value."},
+            {"role": "user", "content": worth_storing_prompt}
         ]
     )
-    extracted_insights_raw = extraction_response.choices[0].message.content
-    print("Extracted insights raw output:", extracted_insights_raw)
+
+    print('Original:\n', worth_storing_response.choices[0].message.content)
+    worth_response = extract_json_from_markdown(
+        worth_storing_response.choices[0].message.content.replace('True', 'true').replace('False', 'false'))
+
+    print('Worth storing response: \n', worth_response)
     
     try:
-        extracted_insights = extract_json(extracted_insights_raw)
+        parsed_response = json.loads(worth_response)
+        shouldExtract = parsed_response['extraction']
+        shouldSummarize = parsed_response['summarization']
     except Exception as e:
-        return JSONResponse(content={"message": "Failed to parse extracted insights", "error": str(e)}, status_code=500)
+        print('Cannot parse JSON for deciding summarization', e)
+        return
     
-    new_records = []
-    namespace = "user-memories"
-    DUPLICATE_THRESHOLD = 0.85
+    print('Should extract from conv', shouldExtract)
+    print('Should summarize from conv', shouldSummarize)
 
-    for insight in extracted_insights:
-        category = insight.get("category")
-        text = insight.get("text")
-        if not category or not text:
-            continue
-
-        record_id = str(uuid.uuid4())
-        record = {
-            "_id": record_id,
-            "text": text,
-            "user_id": user["uid"],
-            "session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "category": category,
-            "tags": [category]
-        }
-
-        search_results = pinecone_index.search_records(
-            namespace=namespace,
-            query={
-                "inputs": {"text": text},
-                "top_k": 1,
-                "filter": {"category": {"$eq": category}, "user_id": {"$eq": user["uid"]}}
-            },
-            fields=["text", "category", "score"]
+    if not shouldExtract and not shouldSummarize:
+        return
+    
+    if shouldExtract:
+        extraction_prompt = (
+            "Based on the following onversation"
+            "extract key psychoanalytic about the user only. Focus on these areas: Psychological Profile, Family/Social Interactions, "
+            "Emotional States, Cognitive Architecture and Experiences. For each category, output a JSON object with keys:\n"
+            "- 'category': one of ['psychological_profile', 'family', 'emotional_state', 'cognitive_architecture', 'experiences']\n"
+            "- 'text': a concise description of the insight.\n"
+            "Format your output as a JSON array. Do not duplicate the information, if one insight is used for one category do not use it for others, it's fine to leave out categories\n\n"
+            "Conversation:\n\n" + conversation_text
         )
+        
+        extraction_response = client.chat.completions.create(
+            model=model_version_extraction,
+            messages=[
+                {"role": "system", "content": "You are an expert psychoanalyst extracting insights."},
+                {"role": "user", "content": extraction_prompt}
+            ]
+        )
+        extracted_insights_raw = extraction_response.choices[0].message.content
+        print("Extracted insights raw output:", extracted_insights_raw)
+        
+        try:
+            extracted_insights = extract_json(extracted_insights_raw)
+        except Exception as e:
+            return
+        
+        new_records = []
+        namespace = "user-memories"
+        DUPLICATE_THRESHOLD = 0.85
 
-        duplicate_found = False
-        hits = search_results.get("result", {}).get("hits", [])
-        if hits and len(hits) > 0:
-            similarity_score = hits[0].get("score", 0)
-            if similarity_score >= DUPLICATE_THRESHOLD:
-                duplicate_found = True
+        for insight in extracted_insights:
+            category = insight.get("category")
+            text = insight.get("text")
+            if not category or not text:
+                continue
 
-        if not duplicate_found:
-            new_records.append(record)
-        else:
-            print(f"Duplicate memory found for category {category} with similarity {similarity_score}: skipping record.")
+            record_id = str(uuid.uuid4())
+            record = {
+                "_id": record_id,
+                "text": text,
+                "user_id": user["uid"],
+                "timestamp": datetime.utcnow().isoformat(),
+                "category": category,
+                "tags": [category]
+            }
+
+            search_results = pinecone_index.search_records(
+                namespace=namespace,
+                query={
+                    "inputs": {"text": text},
+                    "top_k": 1,
+                    "filter": {"category": {"$eq": category}, "user_id": {"$eq": user["uid"]}}
+                },
+                fields=["text", "category", "score"]
+            )
+
+            duplicate_found = False
+            hits = search_results.get("result", {}).get("hits", [])
+            if hits and len(hits) > 0:
+                similarity_score = hits[0].get("score", 0)
+                if similarity_score >= DUPLICATE_THRESHOLD:
+                    duplicate_found = True
+
+            if not duplicate_found:
+                new_records.append(record)
+            else:
+                print(f"Duplicate memory found for category {category} with similarity {similarity_score}: skipping record.")
+        
+        if new_records:
+            pinecone_index.upsert_records(namespace, new_records)
     
-    if new_records:
-        pinecone_index.upsert_records(namespace, new_records)
-    
-    summary_prompt = (
-        "Summarize the following conversation briefly, focusing on key insights and useful context:\n\n" +
-        conversation_text
-    )
-    summary_response = client.chat.completions.create(
-        model=model_version,
-        messages=[
-            {"role": "system", "content": "You are an expert summarizer."},
-            {"role": "user", "content": summary_prompt}
-        ]
-    )
-    summary_text = summary_response.choices[0].message.content
-    print("Session summary:", summary_text)
-    
-    record_summary = {
-        "_id": str(uuid.uuid4()),
-        "text": summary_text,
-        "user_id": user["uid"],
-        "session_id": session_id,
-        "timestamp": datetime.utcnow().isoformat(),
-        "category": "conversation_summary",
-        "tags": ["summary"]
-    }
-    pinecone_index.upsert_records(namespace, [record_summary])
-    
-    del conversation_histories[session_id]
-    
-    return JSONResponse(content={"message": "Psychoanalytic memories stored in long term memory."})
+    if shouldSummarize:
+        summary_prompt = (
+            "Summarize the following conversation briefly, focusing on key insights and useful context:\n\n" +
+            conversation_text
+        )
+        summary_response = client.chat.completions.create(
+            model=model_version,
+            messages=[
+                {"role": "system", "content": "You are an expert summarizer."},
+                {"role": "user", "content": summary_prompt}
+            ]
+        )
+        summary_text = summary_response.choices[0].message.content
+        print("Session summary:", summary_text)
+        
+        record_summary = {
+            "_id": str(uuid.uuid4()),
+            "text": summary_text,
+            "user_id": user["uid"],
+            "timestamp": datetime.utcnow().isoformat(),
+            "category": "conversation_summary",
+            "tags": ["summary"]
+        }
+        pinecone_index.upsert_records(namespace, [record_summary])
 
 @app.get("/new_session")
 async def new_session():
