@@ -17,6 +17,7 @@ import Model from "./Model.js";
 import LoadingDiv from "./components/LoadingDiv";
 import CollapsibleMemoriesPanel from "./components/CollapsiblePanel.js";
 import Chat from "./components/Chat.js";
+import { formatDateSeparator, formatDuration } from "./utils.js";
 
 const api = "https://selfinterface-simple-env.up.railway.app";
 
@@ -109,6 +110,7 @@ function App() {
   const peerConnectionRef = useRef(null);
   const wsRef = useRef(null); // WebSocket for signaling
   const analyserRef = useRef(null); // For audio analysis
+  const convDetails = useRef(null);
 
   // Initialize WebRTC connection
   const initiateWebRTC = async () => {
@@ -265,6 +267,111 @@ function App() {
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
+  const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
+
+  const processPhoneCallEvents = (messages) => {
+    const processed = [];
+    let i = 0;
+  
+    while (i < messages.length) {
+      // Check if the current message is a "Phone call started" event
+      if (messages[i].type === "CONVERSATION_EVENT" && messages[i].content === "Phone call started") {
+        let j = i + 1;
+  
+        // Look for the next "Phone call ended" event
+        while (j < messages.length && !(messages[j].type === "CONVERSATION_EVENT" && messages[j].content === "Phone call ended")) {
+          j++;
+        }
+  
+        if (j < messages.length) {
+          // Found a matching "Phone call ended" event
+          const startTime = messages[i].timestamp;
+          const endTime = messages[j].timestamp;
+          const duration = endTime - startTime;
+  
+          // Create a new event with start timestamp and duration
+          processed.push({
+            type: "CONVERSATION_EVENT",
+            content: `Phone call duration: ${duration} seconds`,
+            timestamp: startTime,
+            duration: formatDuration(duration)
+          });
+  
+          // Skip past the "Phone call ended" event
+          i = j + 1;
+        } else {
+          // No "Phone call ended" found, keep the "Phone call started" event as is
+          processed.push(messages[i]);
+          i++;
+        }
+      } else {
+        // Not a "Phone call started" event, add the message as is
+        processed.push(messages[i]);
+        i++;
+      }
+    }
+  
+    return processed;
+  };
+
+  // Add this function to the App component
+  const fetchConversationHistory = async () => {
+    if (!token || !user) return;
+  
+    try {
+      const res = await fetch(`${api}/user_conversations`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+  
+      // Extract messages from the response
+      const messages = data.messages || [];
+
+      const processedMessages = processPhoneCallEvents(messages);
+  
+      // Process messages to add date separators
+      const allMessages = [];
+      let currentDate = null;
+  
+      processedMessages.forEach(message => {
+        const messageDate = new Date(message.timestamp * 1000);
+        const year = messageDate.getFullYear();
+        const month = (messageDate.getMonth() + 1).toString().padStart(2, '0');
+        const day = messageDate.getDate().toString().padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+  
+        // If the date has changed (or it's the first message), add a date separator
+        if (dateStr !== currentDate) {
+          currentDate = dateStr;
+          allMessages.push({
+            type: 'DATE_SEPARATOR',
+            content: formatDateSeparator(messageDate), // e.g., "2025-02-01"
+            timestamp: message.timestamp // Use the timestamp of the first message of this day
+          });
+        }
+  
+        // Add the original message
+        allMessages.push(message);
+      });
+  
+      // Set the chat with the processed messages, even if empty
+      setChat(allMessages);
+    } catch (error) {
+      console.error("Error fetching conversation history:", error);
+    }
+  };
+
+  const fetchMemories = async () => {
+    try {
+      const res = await fetch(api + "/retrieve_memories", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setMemories(data.memories);
+    } catch (error) {
+      console.error("Error fetching memories:", error);
+    }
+  };
 
   // Handle window resize
   useEffect(() => {
@@ -310,6 +417,18 @@ function App() {
         setPhoneCalling(false);
         setIsTalking(false);
         setProcessing(false);
+        toggleExpandChat(true);
+      } else if (message.type === "CONV_START") {
+        convDetails.current = message.timestamp
+      } else if (message.type === "CONV_END") {
+        const duration = message.timestamp - convDetails.current
+        setChat(chat => [...chat, {
+          type: "CONVERSATION_EVENT",
+          content: `Phone call duration: ${duration || 0} seconds`,
+          timestamp: convDetails.current,
+          duration: formatDuration(duration || 0)
+        }])
+        convDetails.current = null 
       }
     };
 
@@ -336,13 +455,24 @@ function App() {
       const createSession = async () => {
         if (!sessionId) {
           try {
-            const res = await fetch(api + "/new_session", {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await res.json();
-            setSessionId(data.session_id);
+            // Start the new session API call
+          const newSessionPromise = fetch(api + "/new_session", {
+            headers: { Authorization: `Bearer ${token}` },
+          }).then(res => res.json());
 
-            createAndConnectWs(data.session_id, token)
+            // Start fetchConversationHistory (assumed to be async and handle its own state)
+            const historyPromise = token ? fetchConversationHistory() : Promise.resolve();
+
+            // Wait for both to complete
+            const [newSessionData] = await Promise.all([newSessionPromise, historyPromise]);
+
+            if (token) {
+              fetchConversationHistory();
+            }
+
+            // Set sessionId and create WebSocket connection
+            setSessionId(newSessionData.session_id);
+            createAndConnectWs(newSessionData.session_id, token);
           } catch (error) {
             console.error("Error creating session and proactive message:", error);
           }
@@ -350,21 +480,22 @@ function App() {
       };
       createSession();
     }
-  }, [loading]);
+  }, [loading, token]);
 
   useEffect(() => {
-    const fetchMemories = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch(api + "/retrieve_memories", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        setMemories(data.memories);
+        if (token) {
+          fetchMemories();
+        }
       } catch (error) {
-        console.error("Error fetching memories:", error);
+        console.error("Error fetching data:", error);
       }
     };
-    if (token) fetchMemories();
+  
+    if (token) {
+      fetchData();
+    }
   }, [token]);
 
   const renderActivityIcon = () => {
@@ -439,6 +570,7 @@ function App() {
           cursor: 'pointer',
           padding: 12
         }} onClick={() => {
+          toggleExpandChat(false)
           setPhoneCalling(true)
           initiateWebRTC()
         }}>
@@ -583,20 +715,26 @@ function App() {
             memories={[]}
             MemoryCard={() => {}}
             title="Chat"
-            openedByDefault={!isMobile}
-            canBeToggled={!conversing && !calling}
+            expanded={isChatExpanded}
+            toggleExpanded={() => {
+              if (!conversing && !calling) {
+                toggleExpandChat(prev => !prev)
+              }
+            }}
           >
             <div style={{
               position: "relative",
               width: "100%",
               height: "100%",
-              minHeight: 20
+              minHeight: 20,
+              display: "flex"
             }}>
               <div style={{
                 position: "absolute",
                 width: "100%",
                 height: 1,
-                background: "rgba(255, 255, 255, 0.25)"
+                background: "rgba(255, 255, 255, 0.25)",
+                display: "flex"
               }} />
               {!chat || !chat.length || !isWsOpen ?
               <div style={{

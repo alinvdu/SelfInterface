@@ -31,8 +31,79 @@ const Chat = ({ chat, onSendMessage, isLoading }) => {
     }
   };
 
+  const renderMessage = (message, index) => {
+    // Handle different message types
+    if (message.type === "CONVERSATION_EVENT") {
+      return (
+        <div
+          key={index}
+          className={`message ${message.role}`}
+          style={{
+            alignSelf: "center",
+            backgroundColor: "rgba(255, 255, 255, 0.45)",
+            color: message.role === "user" ? "white" : "black",
+            padding: "6px 4px",
+            borderRadius: "8px",
+            maxWidth: "80%",
+            wordWrap: "break-word",
+            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            fontSize: 14,
+            textAlign: "left"
+          }}
+        >
+          {`Phone call conversation (${message.duration})`}
+        </div>
+      );
+    } else if (message.type === "DATE_SEPARATOR") {
+      return (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          flexDirection: "column"
+        }}>
+          <div style={{
+            color: "white",
+            marginBottom: 8
+          }}>
+            {message.content}
+          </div>
+          <div style={{
+            width: "100%",
+            minHeight: 1,
+            backgroundColor: 'rgba(255, 255, 255, 0.35)'
+          }} />
+        </div>
+      );
+    }
+    
+    return (
+      <div
+          key={index}
+          className={`message ${message.role}`}
+          style={{
+            alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+            marginLeft: message.role === "user" ? "20%" : "0",
+            marginRight: message.role === "assistant" ? "20%" : "0",
+            backgroundColor: message.role === "user" ? "rgba(100, 150, 255, 0.85)" : "rgba(255, 255, 255, 0.65)",
+            color: message.role === "user" ? "white" : "black",
+            padding: "12px 16px",
+            borderRadius: "8px",
+            maxWidth: "80%",
+            wordWrap: "break-word",
+            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+            border: "1px solid rgba(255, 255, 255, 0.3)",
+            fontSize: 15,
+            textAlign: "left"
+          }}
+        >
+          {message.content}
+        </div>
+    );
+  };
+
   return (
-    <div className="chat-container" style={{ display: "flex", paddingTop: 15, flexDirection: "column", height: "100%" }}>
+    <div className="chat-container" style={{ display: "flex", paddingTop: 15, flexDirection: "column", flex: 1 }}>
       <div 
         className="messages-container" 
         style={{ 
@@ -43,29 +114,9 @@ const Chat = ({ chat, onSendMessage, isLoading }) => {
           gap: "12px"
         }}
       >
-        {chat.map((message, index) => (
-          <div
-            key={index}
-            className={`message ${message.role}`}
-            style={{
-              alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-              marginLeft: message.role === "user" ? "20%" : "0",
-              marginRight: message.role === "assistant" ? "20%" : "0",
-              backgroundColor: message.role === "user" ? "rgba(100, 150, 255, 0.85)" : "rgba(255, 255, 255, 0.65)",
-              color: message.role === "user" ? "white" : "black",
-              padding: "12px 16px",
-              borderRadius: "8px",
-              maxWidth: "80%",
-              wordWrap: "break-word",
-              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
-              border: "1px solid rgba(255, 255, 255, 0.3)",
-              fontSize: 15,
-              textAlign: "left"
-            }}
-          >
-            {message.content}
-          </div>
-        ))}
+        {chat.map((message, index) => {
+          return renderMessage(message, index)
+        })}
         <div ref={messagesEndRef} />
       </div>
       {isLoading ? <div style={{width: "100%", display: "flex", justifyContent: "center", marginBottom: 10}}>

@@ -3,16 +3,25 @@ import { MdOutlineChevronLeft } from "react-icons/md";
 import { MdOutlineChevronRight } from "react-icons/md";
 import LoginButton from './LoginButton';
 
-const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, memories, children, canBeToggled=true, title = "Memories" }) => {
-  const [isExpanded, setIsExpanded] = useState(openedByDefault);
+const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, memories, children, expanded=false, toggleExpanded, canBeToggled=true, title = "Memories" }) => {
+  const [isExpandedInternal, setIsExpandedInternal] = useState(openedByDefault);
   const [isAnimating, setIsAnimating] = useState(false);
+
+  const isExpanded = expanded !== undefined && toggleExpanded ? expanded : isExpandedInternal;
 
   const toggleExpand = (overrideValue) => {
     setIsAnimating(true);
-    if (overrideValue !== undefined) {
-      setIsExpanded(undefined);
+    
+    if (toggleExpanded && expanded !== undefined) {
+      // Use external toggle function if provided
+      toggleExpanded(overrideValue !== undefined ? overrideValue : !expanded);
     } else {
-      setIsExpanded(!isExpanded);
+      // Otherwise use internal state
+      if (overrideValue !== undefined) {
+        setIsExpandedInternal(overrideValue);
+      } else {
+        setIsExpandedInternal(!isExpandedInternal);
+      }
     }
     
     // Reset animation state after animation completes
@@ -23,7 +32,7 @@ const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, mem
 
   useEffect(() => {
     if (!canBeToggled) {
-        setIsExpanded(false)
+      setIsExpandedInternal(false)
     }
   }, [canBeToggled])
 

@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 import time
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
+import datetime as dt
+
 import logging
 import random
 import copy
@@ -124,7 +126,7 @@ model_version_extraction = "gpt-4o-mini"
 
 # Initialize Firebase Admin with your service account key.
 import base64
-from firebase_admin import credentials
+from firebase_admin import credentials, firestore
 
 encoded_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
 if not encoded_key:
@@ -137,6 +139,8 @@ firebase_key_dict = json.loads(firebase_key_json)
 # Initialize credentials with the decoded JSON
 cred = credentials.Certificate(firebase_key_dict)
 firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
@@ -169,6 +173,7 @@ stop_event = asyncio.Event()
 # In-memory conversation history: session_id -> list of messages
 conversation_histories = {}
 chat_histories = {}
+session_greeting_data = {}
 
 empathetic_greetings = [
     "Hi there, I'm here to listen, how can I support you today?",
@@ -268,6 +273,13 @@ async def generate_and_send_proactive_message(user, session_id, websocket):
             "type": "CHAT_MESSAGE",
             "message": proactive_message_chat
         })
+        if user:
+            session_greeting_data[session_id] = {
+                "message": proactive_message_chat,
+                "timestamp": dt.datetime.now().timestamp(),
+                "saved": False
+            }
+    
     except Exception as e:
         print(f"Error generating or sending proactive message: {e}")
 
@@ -449,6 +461,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     }
                     history = conversation_histories[session_id]
                 history.append({"role": "assistant", "content": proactive_text})
+                if user:
+                    save_call_event_to_firestore(user.get("uid"), session_id, "started")
+                    await websocket.send_json({
+                        "type": "CONV_START",
+                        "timestamp": dt.datetime.now().timestamp()
+                    })
                 await stream_tts_to_webrtc(pc, proactive_text, session_id, websocket)
                 await pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="offer"))
                 answer = await pc.createAnswer()
@@ -464,7 +482,32 @@ async def websocket_endpoint(websocket: WebSocket):
                     candidate.sdpMLineIndex = candidate_dict.get("sdpMLineIndex")
                     await pc.addIceCandidate(candidate)
             elif data["type"] == "CHAT_MESSAGE":
+                if user:
+                    # handle the message of greetings that was not saved
+                    greeting_data = session_greeting_data.get(session_id)
+                    is_first_message = greeting_data and not greeting_data["saved"]
+
+                    if is_first_message:
+                        # Save the initial greeting with its original timestamp
+                        save_conversation_to_firestore_with_timestamp(
+                            user.get("uid"), 
+                            session_id, 
+                            {"role": "assistant", "content": greeting_data["message"]},
+                            greeting_data["timestamp"]
+                        )
+                        
+                        # Mark that we've saved the greeting message
+                        session_greeting_data[session_id]["saved"] = True
+
+                    save_conversation_to_firestore(user.get("uid"), session_id, 
+                                                {"role": "user", "content": data["message"]})
+
                 assistant_message = await process_message(None, data["message"], session_id, user, websocket, True)
+
+                if user:
+                    save_conversation_to_firestore(user.get("uid"), session_id, 
+                                                {"role": "assistant", "content": assistant_message})
+    
                 chat_history = chat_histories[session_id]
                 chat_history.append({"role": "assistant", "content": assistant_message})
 
@@ -508,6 +551,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         "role": "system",
                         "content": SYSTEM_PROMPT
                     }]
+
+                if user:
+                    save_call_event_to_firestore(user.get("uid"), session_id, "ended")
+                    await websocket.send_json({
+                        "type": "CONV_END",
+                        "timestamp": dt.datetime.now().timestamp()
+                    })
 
                 # Acknowledge the disconnect
                 await websocket.send_json({
@@ -910,6 +960,100 @@ async def retrieve_memories(user: dict = Depends(verify_token)):
     memories.sort(key=lambda x: x["timestamp"], reverse=True)
     return JSONResponse(content={"memories": memories})
 
+def get_user_conversations(user_id):
+    """Retrieves all conversations for a given user ID."""
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID is required")
+
+    try:
+        conversations_ref = db.collection("users")
+        query_ref = conversations_ref.where("userId", "==", user_id)
+        docs = query_ref.stream()
+        conversations = [doc.to_dict() for doc in docs]
+        return conversations
+    except Exception as e:
+        print(f"Error fetching conversations: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching conversations")
+
+
+@app.get("/user_conversations")
+async def user_conversations_endpoint(user: dict = Depends(verify_token)):
+    user_id = user['uid']
+
+    user_ref = db.collection('users').document(user_id)
+    messages_ref = user_ref.collection('messages')
+
+    messages = messages_ref.order_by('timestamp', direction=firestore.Query.ASCENDING).stream()
+    message_list = [{"id": message.id, **message.to_dict()} for message in messages]
+
+    return {"messages": message_list}
+
+
 from fastapi.staticfiles import StaticFiles
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+
+# DB RELATED STUFF
+def save_conversation_to_firestore_with_timestamp(user_id, session_id, message, timestamp, message_type="CHAT_MESSAGE"):
+    """Save a conversation message to Firestore with provided timestamp."""
+    if not user_id:
+        return
+    
+    # Create a reference to the conversation document
+    conversation_ref = db.collection('users').document(user_id) \
+                         .collection('messages')
+    
+    # Create message data
+    message_data = {
+        "type": message_type,
+        "content": message.get("content", ""),
+        "role": message.get("role", "system"),
+        "timestamp": timestamp
+    }
+    
+    # Add message to Firestore
+    conversation_ref.add(message_data)
+
+def save_conversation_to_firestore(user_id, session_id, message, message_type="CHAT_MESSAGE"):
+    """Save a conversation message to Firestore."""
+    if not user_id:
+        return
+    
+    timestamp = dt.datetime.now().timestamp()
+    
+    # Create a reference to the conversation document
+    conversation_ref = db.collection('users').document(user_id) \
+                         .collection('messages')
+    
+    # Create message data
+    message_data = {
+        "type": message_type,
+        "content": message.get("content", ""),
+        "role": message.get("role", "system"),
+        "timestamp": timestamp
+    }
+    
+    # Add message to Firestore
+    conversation_ref.add(message_data)
+
+def save_call_event_to_firestore(user_id, session_id, event_type="started"):
+    """Save a call event to Firestore."""
+    if not user_id:
+        return
+
+    timestamp = dt.datetime.now().timestamp()
+    
+    # Create a reference to the conversation document
+    conversation_ref = db.collection('users').document(user_id) \
+                         .collection('messages')
+    
+    # Create event data
+    message_data = {
+        "type": "CONVERSATION_EVENT",
+        "content": f"Phone call {event_type}",
+        "timestamp": timestamp
+    }
+    
+    # Add event to Firestore
+    conversation_ref.add(message_data)
+    
