@@ -1,8 +1,139 @@
 import React, { useState, useRef, useEffect } from "react";
 import { GoArrowUp } from "react-icons/go";
 import LoadingDiv from "./LoadingDiv";
+import { BsThreeDots } from "react-icons/bs";
 
-const Chat = ({ chat, onSendMessage, isLoading }) => {
+const ChatMessage = ({ message, token, api, onDeleteMessage, index }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  const [showThreeDots, setShowThreeDots] = useState(false);
+
+  const handleDeleteMessage = async (messageItem) => {
+    if (token && typeof onDeleteMessage === 'function') {
+      try {
+        console.log('message id', messageItem)
+        const response = await fetch(`${api}/delete_message`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ 
+            message_id: messageItem.id 
+          })
+        });
+        
+        if (response.ok) {
+          onDeleteMessage(messageItem);
+          setIsMenuOpen(false);
+        }
+      } catch (error) {
+        console.error("Error deleting message:", error);
+      }
+    }
+  };
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+        setShowThreeDots(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  return (
+    <div
+      key={index}
+      className={`message ${message.role}`}
+      style={{
+        alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+        marginLeft: message.role === "user" ? "20%" : "0",
+        marginRight: message.role === "assistant" ? "20%" : "0",
+        backgroundColor: message.role === "user" ? "rgba(100, 150, 255, 0.85)" : "rgba(255, 255, 255, 0.65)",
+        color: message.role === "user" ? "white" : "black",
+        padding: "12px 16px",
+        borderRadius: "8px",
+        maxWidth: "80%",
+        wordWrap: "break-word",
+        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+        border: "1px solid rgba(255, 255, 255, 0.3)",
+        fontSize: 15,
+        textAlign: "left",
+        position: 'relative'
+      }}
+      onMouseEnter={() => {
+        if (message.id) {
+          setShowThreeDots(true);
+        }
+      }}
+      onMouseLeave={() => {
+        if (!isMenuOpen) {
+          setShowThreeDots(false);
+        }
+      }}
+    >
+      {message.content}
+      {showThreeDots &&
+        <div 
+            style={{ 
+                position: "absolute", 
+                top: "0px", 
+                right: "5px", 
+                cursor: "pointer",
+                zIndex: 5,
+                color: "black",
+                fontSize: 17
+            }}
+            onClick={(e) => {
+            e.stopPropagation();
+            setIsMenuOpen(!isMenuOpen);
+            }}
+        >
+            <BsThreeDots />
+            
+            {isMenuOpen && (
+            <div 
+                ref={menuRef}
+                style={{
+                    position: "absolute",
+                    top: "15px",
+                    right: "0",
+                    background: "rgba(255, 255, 255, 0.95)",
+                    border: "1px solid rgba(255, 255, 255, 1)",
+                    borderRadius: "5px",
+                    padding: "4px 0",
+                    zIndex: 100,
+                    minWidth: "120px",
+                    color: "black",
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                }}
+            >
+                <div 
+                style={{
+                    padding: "4px 6px",
+                    cursor: "pointer",
+                    hover: { background: "rgba(255, 255, 255, 0.1)" }
+                }}
+                onClick={() => handleDeleteMessage(message)}
+                >
+                Delete Message
+                </div>
+            </div>
+            )}
+        </div>}
+    </div>
+  )
+}
+
+const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage }) => {
   const [newMessage, setNewMessage] = useState("");
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -52,7 +183,7 @@ const Chat = ({ chat, onSendMessage, isLoading }) => {
             textAlign: "left"
           }}
         >
-          {`Phone call conversation (${message.duration})`}
+          {message.duration ? `Phone call conversation (${message.duration})` : "Phone call conversation"}
         </div>
       );
     } else if (message.type === "DATE_SEPARATOR") {
@@ -76,30 +207,8 @@ const Chat = ({ chat, onSendMessage, isLoading }) => {
         </div>
       );
     }
-    
-    return (
-      <div
-          key={index}
-          className={`message ${message.role}`}
-          style={{
-            alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-            marginLeft: message.role === "user" ? "20%" : "0",
-            marginRight: message.role === "assistant" ? "20%" : "0",
-            backgroundColor: message.role === "user" ? "rgba(100, 150, 255, 0.85)" : "rgba(255, 255, 255, 0.65)",
-            color: message.role === "user" ? "white" : "black",
-            padding: "12px 16px",
-            borderRadius: "8px",
-            maxWidth: "80%",
-            wordWrap: "break-word",
-            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
-            border: "1px solid rgba(255, 255, 255, 0.3)",
-            fontSize: 15,
-            textAlign: "left"
-          }}
-        >
-          {message.content}
-        </div>
-    );
+
+    return <ChatMessage onDeleteMessage={onDeleteMessage} api={api} token={token} message={message} index={index} />
   };
 
   return (

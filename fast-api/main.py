@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Query, Depends, Header, HTTPException, WebSocket
+from fastapi import FastAPI, File, UploadFile, Query, Depends, Header, HTTPException, WebSocket, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 import os
 import uuid
@@ -519,8 +519,10 @@ async def websocket_endpoint(websocket: WebSocket):
             elif data["type"] == "rtc_disconnect":
                 session_id = data.get("sessionId")
 
-                # here we should finalize conv and extract ddata
-                asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
+                memory_enabled = get_memory_enabled(user['uid'])
+
+                if memory_enabled:
+                    asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
                 
                 # Close the peer connection if it exists
                 if session_id in peer_connections:
@@ -580,12 +582,14 @@ async def websocket_endpoint(websocket: WebSocket):
         if session_id in peer_connections:
             await peer_connections[session_id].close()
             del peer_connections[session_id]
+
+        memory_enabled = get_memory_enabled(user['uid'])
         
-        if session_id in conversation_histories and len(conversation_histories[session_id]) > 3:
+        if session_id in conversation_histories and len(conversation_histories[session_id]) > 3 and memory_enabled:
             print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for conversation")
             asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
 
-        if session_id in chat_histories and len(chat_histories[session_id]) > 3:
+        if session_id in chat_histories and len(chat_histories[session_id]) > 3 and memory_enabled:
             print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for chat")
             asyncio.create_task(finalize_conversation(copy.deepcopy(chat_histories[session_id]), user))
             
@@ -735,9 +739,10 @@ async def finalize_conversation(
 
     # First and foremost, determine if the conversation is worth storing
     worth_storing_prompt = (
-        "Analyze the following conversation for a process that wants to extract psychoanalytic profile and conversation summary.\n"
+        "Analyze the following conversation for a process that wants to extract psychoanalytic profile, user details and conversation summary.\n"
         "The conversation should be stored if:\n"
         "The conversation is meaningful beyond basic chit-chat, app usage, or questions about the application or the bot that personifies the application\n"
+        "The conversation contains important user details that the user wants the psychologist to know such as name"
         "Return a JSON with the following structure:\n\n"
         """
         {
@@ -756,11 +761,8 @@ async def finalize_conversation(
         ]
     )
 
-    print('Original:\n', worth_storing_response.choices[0].message.content)
     worth_response = extract_json_from_markdown(
         worth_storing_response.choices[0].message.content.replace('True', 'true').replace('False', 'false'))
-
-    print('Worth storing response: \n', worth_response)
     
     try:
         parsed_response = json.loads(worth_response)
@@ -888,6 +890,210 @@ async def stop_playing():
     stop_event.set()
     return {"message": "Playback stopping..."}
 
+# Add these endpoints to your FastAPI backend
+
+@app.post("/clear_memories")
+async def clear_memories(user: dict = Depends(verify_token)):
+    """Clear all memories for a user from Pinecone."""
+    user_id = user.get("uid")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID is required")
+    
+    try:
+        # First, find all records for this user
+        dummy_vector = [0.0] * 1024  # Adjust vector dimension to match your index
+        
+        # Query to find all user records
+        results = pinecone_index.query(
+            vector=dummy_vector,
+            top_k=10000,  # Set a high number to get all records
+            filter={"user_id": {"$eq": user_id}},
+            namespace="user-memories",
+            include_metadata=False  # We only need IDs
+        )
+        
+        # Extract IDs of user's records
+        ids_to_delete = [match["id"] for match in results.get("matches", [])]
+        
+        if not ids_to_delete:
+            return {"message": "No memories found to clear"}
+        
+        # Delete in batches if there are many records
+        batch_size = 100
+        for i in range(0, len(ids_to_delete), batch_size):
+            batch = ids_to_delete[i:i + batch_size]
+            delete_response = pinecone_index.delete(
+                ids=batch,
+                namespace="user-memories"
+            )
+        
+        total_deleted = len(ids_to_delete)
+        return {"message": f"Successfully cleared {total_deleted} memories"}
+    except Exception as e:
+        print(f"Error clearing memories: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing memories: {str(e)}")
+
+@app.post("/clear_chat")
+async def clear_chat(user: dict = Depends(verify_token)):
+    """Clear all chat messages for a user from Firestore."""
+    user_id = user.get("uid")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID is required")
+    
+    try:
+        # Get a reference to the user's messages collection
+        user_ref = db.collection('users').document(user_id)
+        messages_ref = user_ref.collection('messages')
+        
+        # Delete all documents in the collection
+        docs = messages_ref.stream()
+        for doc in docs:
+            doc.reference.delete()
+        
+        return {"message": "Chat history cleared successfully"}
+    except Exception as e:
+        print(f"Error clearing chat history: {e}")
+        raise HTTPException(status_code=500, detail="Error clearing chat history")
+
+@app.post("/delete_memory")
+async def delete_memory(
+    request: Request,
+    user: dict = Depends(verify_token)
+):
+    """Delete a specific memory for a user."""
+    data = await request.json()
+    user_id = user.get("uid")
+    text = data.get("text")
+    category = data.get("category")
+    
+    if not user_id or not text:
+        raise HTTPException(status_code=400, detail="User ID and memory text are required")
+    
+    try:
+        # First, find the records that match our criteria
+        # Create a dummy vector for search (since we're only interested in metadata matching)
+        dummy_vector = [0.0] * 1024  # Adjust vector dimension to match your index
+        
+        # Build search filter
+        search_filter = {
+            "user_id": {"$eq": user_id},
+            "text": {"$eq": text}
+        }
+        
+        if category:
+            search_filter["category"] = {"$eq": category}
+        
+        # Query to find matching records
+        results = pinecone_index.query(
+            vector=dummy_vector,
+            top_k=100,  # Adjust based on potential matches
+            filter=search_filter,
+            namespace="user-memories",
+            include_metadata=True
+        )
+        
+        # Extract IDs of matching records
+        ids_to_delete = [match["id"] for match in results.get("matches", [])]
+        
+        if not ids_to_delete:
+            return {"message": "No matching memories found"}
+        
+        # Delete records by ID
+        delete_response = pinecone_index.delete(
+            ids=ids_to_delete,
+            namespace="user-memories"
+        )
+        
+        return {"message": f"Successfully deleted {len(ids_to_delete)} memories"}
+    except Exception as e:
+        print(f"Error deleting memory: {e}")
+        raise HTTPException(status_code=500, detail=f"Error deleting memory: {str(e)}")
+
+@app.post("/delete_message")
+async def delete_message(
+    request: Request,
+    user: dict = Depends(verify_token)
+):
+    """Delete a specific chat message for a user."""
+    data = await request.json()
+    user_id = user.get("uid")
+    message_id = data.get("message_id")
+    
+    if not user_id or not message_id:
+        raise HTTPException(status_code=400, detail="User ID and message ID are required")
+    
+    try:
+        # Delete the specific message document
+        user_ref = db.collection('users').document(user_id)
+        message_ref = user_ref.collection('messages').document(message_id)
+        message_ref.delete()
+        
+        return {"message": "Chat message deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting chat message: {e}")
+        raise HTTPException(status_code=500, detail="Error deleting chat message")
+
+@app.get("/user_preferences")
+async def get_user_preferences(user: dict = Depends(verify_token)):
+    """Get user preferences for memory and chat storage."""
+    user_id = user.get("uid")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID is required")
+    
+    try:
+        # Get user preferences document
+        user_ref = db.collection('users').document(user_id)
+        prefs_ref = user_ref.collection('preferences').document('app_settings')
+        prefs_doc = prefs_ref.get()
+        
+        if prefs_doc.exists:
+            prefs = prefs_doc.to_dict()
+        else:
+            # Default preferences
+            prefs = {
+                "memory_enabled": True,
+                "chat_enabled": True
+            }
+            # Create the document with default values
+            prefs_ref.set(prefs)
+        
+        return prefs
+    except Exception as e:
+        print(f"Error getting user preferences: {e}")
+        raise HTTPException(status_code=500, detail="Error getting user preferences")
+
+@app.post("/update_preferences")
+async def update_preferences(
+    request: Request,
+    user: dict = Depends(verify_token)
+):
+    """Update user preferences for memory and chat storage."""
+    data = await request.json()
+    user_id = user.get("uid")
+    
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID is required")
+    
+    try:
+        # Get user preferences document
+        user_ref = db.collection('users').document(user_id)
+        prefs_ref = user_ref.collection('preferences').document('app_settings')
+        
+        # Update only the provided preferences
+        update_data = {}
+        if "memory_enabled" in data:
+            update_data["memory_enabled"] = data["memory_enabled"]
+        if "chat_enabled" in data:
+            update_data["chat_enabled"] = data["chat_enabled"]
+        
+        if update_data:
+            prefs_ref.set(update_data, merge=True)
+        
+        return {"message": "Preferences updated successfully"}
+    except Exception as e:
+        print(f"Error updating user preferences: {e}")
+        raise HTTPException(status_code=500, detail="Error updating user preferences")
+
 async def process_message(
     pc,
     user_text,
@@ -902,30 +1108,34 @@ async def process_message(
         history = conversation_histories[session_id]
 
     if user:
-        results = pinecone_index.search_records(
-            namespace="user-memories",
-            query={
-                "inputs": {"text": user_text},
-                "top_k": 5,
-                "filter": {"user_id": {"$eq": user["uid"]}}
-            },
-            fields=["text"]
-        )
-        memories = []
-        result = results.get("result", {})
-        for match in result.get("hits", []):
-            fields = match.get("fields", {})
-            if "text" in fields:
-                category = fields.get("category", "Unknown Category")
-                memories.append("Category: " + category + "\n Memory: " + fields["text"])
+        # Check if memory is enabled
+        memory_enabled = get_memory_enabled(user.get("uid"))
 
-        if memories:
-            retrieved_memories_text = (
-                "MEMORY_INJECTION: The following are memories retained about the user:\n" +
-                "\n".join(memories) +
-                "\nYou have the capacity to retain memory about the user, so act accordingly."
+        if memory_enabled:
+            results = pinecone_index.search_records(
+                namespace="user-memories",
+                query={
+                    "inputs": {"text": user_text},
+                    "top_k": 5,
+                    "filter": {"user_id": {"$eq": user["uid"]}}
+                },
+                fields=["text"]
             )
-            history.append({"role": "system", "content": retrieved_memories_text})
+            memories = []
+            result = results.get("result", {})
+            for match in result.get("hits", []):
+                fields = match.get("fields", {})
+                if "text" in fields:
+                    category = fields.get("category", "Unknown Category")
+                    memories.append("Category: " + category + "\n Memory: " + fields["text"])
+
+            if memories:
+                retrieved_memories_text = (
+                    "MEMORY_INJECTION: The following are memories retained about the user:\n" +
+                    "\n".join(memories) +
+                    "\nYou have the capacity to retain memory about the user, so act accordingly."
+                )
+                history.append({"role": "system", "content": retrieved_memories_text})
 
     history.append({"role": "user", "content": user_text})
 
@@ -952,7 +1162,9 @@ async def retrieve_memories(user: dict = Depends(verify_token)):
         namespace="user-memories",
         include_metadata=True
     )
+
     memories = [{
+        "id": match["id"],
         "text": match["metadata"]["text"],
         "category": match["metadata"]["category"],
         "timestamp": match["metadata"]["timestamp"]
@@ -993,48 +1205,88 @@ from fastapi.staticfiles import StaticFiles
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
+def get_chat_enabled(userId):
+    chat_enabled = True
+    try:
+        user_ref = db.collection('users').document(userId)
+        prefs_ref = user_ref.collection('preferences').document('app_settings')
+        prefs_doc = prefs_ref.get()
+        
+        if prefs_doc.exists:
+            prefs = prefs_doc.to_dict()
+            chat_enabled = prefs.get("chat_enabled", True)
+    except Exception as e:
+        print(f"Error checking chat preferences: {e}")
+
+    return chat_enabled
+
+def get_memory_enabled(userId):
+    memory_enabled = True  # Default to enabled
+    try:
+        user_ref = db.collection('users').document(userId)
+        prefs_ref = user_ref.collection('preferences').document('app_settings')
+        prefs_doc = prefs_ref.get()
+        
+        if prefs_doc.exists:
+            prefs = prefs_doc.to_dict()
+            memory_enabled = prefs.get("memory_enabled", True)
+    except Exception as e:
+        print(f"Error checking memory preferences: {e}")
+
+    return memory_enabled
+
 # DB RELATED STUFF
 def save_conversation_to_firestore_with_timestamp(user_id, session_id, message, timestamp, message_type="CHAT_MESSAGE"):
     """Save a conversation message to Firestore with provided timestamp."""
     if not user_id:
         return
     
-    # Create a reference to the conversation document
-    conversation_ref = db.collection('users').document(user_id) \
-                         .collection('messages')
+    chat_enabled = get_chat_enabled(user_id)
     
-    # Create message data
-    message_data = {
-        "type": message_type,
-        "content": message.get("content", ""),
-        "role": message.get("role", "system"),
-        "timestamp": timestamp
-    }
+    # Only save if chat storage is enabled
+    if chat_enabled:
     
-    # Add message to Firestore
-    conversation_ref.add(message_data)
+        # Create a reference to the conversation document
+        conversation_ref = db.collection('users').document(user_id) \
+                            .collection('messages')
+        
+        # Create message data
+        message_data = {
+            "type": message_type,
+            "content": message.get("content", ""),
+            "role": message.get("role", "system"),
+            "timestamp": timestamp
+        }
+    
+        # Add message to Firestore
+        conversation_ref.add(message_data)
 
 def save_conversation_to_firestore(user_id, session_id, message, message_type="CHAT_MESSAGE"):
     """Save a conversation message to Firestore."""
     if not user_id:
         return
     
-    timestamp = dt.datetime.now().timestamp()
+    chat_enabled = get_chat_enabled(user_id)
     
-    # Create a reference to the conversation document
-    conversation_ref = db.collection('users').document(user_id) \
-                         .collection('messages')
+    # Only save if chat storage is enabled
+    if chat_enabled:
     
-    # Create message data
-    message_data = {
-        "type": message_type,
-        "content": message.get("content", ""),
-        "role": message.get("role", "system"),
-        "timestamp": timestamp
-    }
-    
-    # Add message to Firestore
-    conversation_ref.add(message_data)
+        timestamp = dt.datetime.now().timestamp()
+        
+        # Create a reference to the conversation document
+        conversation_ref = db.collection('users').document(user_id) \
+                            .collection('messages')
+        
+        # Create message data
+        message_data = {
+            "type": message_type,
+            "content": message.get("content", ""),
+            "role": message.get("role", "system"),
+            "timestamp": timestamp
+        }
+        
+        # Add message to Firestore
+        conversation_ref.add(message_data)
 
 def save_call_event_to_firestore(user_id, session_id, event_type="started"):
     """Save a call event to Firestore."""
@@ -1056,4 +1308,4 @@ def save_call_event_to_firestore(user_id, session_id, event_type="started"):
     
     # Add event to Firestore
     conversation_ref.add(message_data)
-    
+

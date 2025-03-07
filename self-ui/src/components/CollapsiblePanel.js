@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MdOutlineChevronLeft } from "react-icons/md";
 import { MdOutlineChevronRight } from "react-icons/md";
 import LoginButton from './LoginButton';
+import { HiDotsVertical } from "react-icons/hi";
 
-const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, memories, children, expanded=false, toggleExpanded, canBeToggled=true, title = "Memories" }) => {
+const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, api, children, expanded=false,
+    toggleExpanded, canBeToggled=true, title = "Memories", onClear=null, toggleComponent = null,
+    toggleLabel = "" }) => {
   const [isExpandedInternal, setIsExpandedInternal] = useState(openedByDefault);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -35,6 +38,43 @@ const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, mem
       setIsExpandedInternal(false)
     }
   }, [canBeToggled])
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const handleClear = async () => {
+    if (token) {
+      try {
+        const endpoint = title === "Memories" ? "clear_memories" : "clear_chat";
+        const response = await fetch(`${api}/${endpoint}`, {
+          method: "POST",
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          }
+        });
+        
+        if (response.ok) {
+          setIsMenuOpen(false);
+          if (onClear) onClear(); // Call the onClear callback
+        }
+      } catch (error) {
+        console.error(`Error clearing ${title.toLowerCase()}:`, error);
+      }
+    }
+  };
 
   return (
     <div
@@ -86,26 +126,116 @@ const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, mem
               <div style={{ fontSize: 21, borderRadius: 6 }}>
                 {title}
               </div>
-              <button 
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "white",
-                  cursor: "pointer",
-                  padding: "4px",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: 0.8,
-                  transition: "opacity 0.2s",
-                }}
-                onClick={() => toggleExpand()}
-                onMouseOver={(e) => e.currentTarget.style.opacity = 1}
-                onMouseOut={(e) => e.currentTarget.style.opacity = 0.8}
-              >
-                <MdOutlineChevronLeft size={18} />
-              </button>
+              <div style={{display: "flex", flexDirection: "row", alignItems: "center"}}>
+                {toggleComponent && (
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    marginRight: '15px',
+                    cursor: 'default',
+                    fontSize: '14px'
+                  }}>
+                    {toggleLabel && (
+                      <span style={{ marginRight: '8px', color: 'rgba(255,255,255,0.9)' }}>
+                        {toggleLabel}
+                      </span>
+                    )}
+                    {toggleComponent}
+                  </div>
+                )}
+                <button 
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "white",
+                    cursor: "pointer",
+                    padding: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: 0.8,
+                    transition: "opacity 0.2s",
+                    borderRadius: 3
+                  }}
+                  onClick={() => toggleExpand()}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.opacity = 1
+                    e.currentTarget.style.background = "rgba(0, 0, 0, 0.15)"
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.opacity = 0.8
+                    e.currentTarget.style.background = "none"
+                  }
+                }
+                >
+                  <MdOutlineChevronLeft size={18} />
+                </button>
+                {/* Add the three-dot menu */}
+                <div 
+                  style={{ cursor: "pointer" }}
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent panel from toggling
+                    setIsMenuOpen(!isMenuOpen);
+                  }}
+                >
+                  <div style={{
+                    background: "none",
+                    border: "none",
+                    color: "white",
+                    cursor: "pointer",
+                    padding: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: 0.8,
+                    transition: "opacity 0.2s",
+                    borderRadius: 3,
+                    marginTop: 0
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.opacity = 1
+                    e.currentTarget.style.background = "rgba(0, 0, 0, 0.15)"
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.opacity = 0.8
+                    e.currentTarget.style.background = "none"
+                  }}
+                  >
+                    <HiDotsVertical />
+                  </div>
+                  
+                  {/* Dropdown menu */}
+                  {isMenuOpen && (
+                    <div 
+                      ref={menuRef}
+                      style={{
+                        position: "absolute",
+                        top: "50px",
+                        right: "-20px",
+                        background: "rgba(255, 255, 255, 0.85)",
+                        border: "1px solid rgba(255, 255, 255, 0.95)",
+                        borderRadius: "5px",
+                        padding: "5px 0",
+                        zIndex: 100,
+                        minWidth: "120px",
+                        color: "black",
+                        fontSize: 14
+                      }}
+                    >
+                      <div 
+                        style={{
+                          padding: "4px 6px",
+                          cursor: "pointer",
+                          hover: { background: "rgba(255, 255, 255, 0.1)" }
+                        }}
+                        onClick={handleClear}
+                      >
+                        Clear {title}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             
             <div style={{ 

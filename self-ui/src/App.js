@@ -18,58 +18,10 @@ import LoadingDiv from "./components/LoadingDiv";
 import CollapsibleMemoriesPanel from "./components/CollapsiblePanel.js";
 import Chat from "./components/Chat.js";
 import { formatDateSeparator, formatDuration } from "./utils.js";
+import MemoryCard from "./components/MemoryCard.js";
+import Switch from "./components/Switch.js";
 
 const api = "https://selfinterface-simple-env.up.railway.app";
-
-// --- MemoryCard Component ---
-function MemoryCard({ memory, hue }) {
-  const [expanded, setExpanded] = useState(false);
-  const previewLimit = 100;
-  const text = typeof memory === "string" ? memory : memory.text;
-  const category =
-    typeof memory === "string"
-      ? "General"
-      : memory.category.split("_").join(" ") || "General";
-  const previewText =
-    text.length > previewLimit ? text.slice(0, previewLimit) + "..." : text;
-
-  const cardStyle = {
-    border: `1px solid rgba(255, 255, 255, 0.4)`,
-    borderRadius: "5px",
-    background: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 14,
-    padding: "8px",
-    textAlign: "left",
-    color: 'black',
-    cursor: "pointer",
-  };
-
-  const tagStyle = {
-    border: `1px solid rgba(255, 255, 255, 0.3)`,
-    borderRadius: "5px",
-    background: 'rgba(255, 255, 255, 0.55)',
-    fontSize: "0.8rem",
-    padding: "3px",
-    marginTop: 3,
-    color: `black`,
-  };
-
-  return (
-    <div
-      style={{
-        marginBottom: "1.5rem",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-      }}
-    >
-      <div style={cardStyle} onClick={() => setExpanded(!expanded)}>
-        <div>{expanded ? text : previewText}</div>
-      </div>
-      <div style={tagStyle}>{category}</div>
-    </div>
-  );
-}
 
 // --- Background Scene Component ---
 function BackgroundScene({ isTalking }) {
@@ -252,6 +204,26 @@ function App() {
     }
   };
 
+  const handleClearMemories = () => {
+    setMemories([]);
+  };
+  
+  const handleClearChat = () => {
+    setChat([]);
+  };
+
+  const handleDeleteMessage = async (message) => {
+    // Update the chat state by removing the deleted message
+    setChat(chat.filter(item => item.id !== message.id));
+  };
+  
+  const handleDeleteMemory = async (memory) => {
+    // Update the memories state by removing the deleted memory
+    setMemories(memories.filter(m => 
+      !(m.text === memory.text && m.category === memory.category)
+    ));
+  };
+
   const { token, user, loading } = useAuth();
   const [isTalking, setIsTalking] = useState(false);
   const [sessionId, setSessionId] = useState(null);
@@ -264,10 +236,17 @@ function App() {
   const [disconnecting, setDisconnecting] = useState(false);
   const animationFrameIdRef = useRef(null);
   const [isWsOpen, toggleWsOpen] = useState(false);
+  const [chatLoading, setChatLoading] = useState(true);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
   const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
+
+  const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
+  const [isChatEnabled, setIsChatEnabled] = useState(true);
+  const [isTogglingMemory, setIsTogglingMemory] = useState(false);
+  const [isTogglingChat, setIsTogglingChat] = useState(false);
+  const [loadingPreferences, setLoadingPreferences] = useState(true);
 
   const processPhoneCallEvents = (messages) => {
     const processed = [];
@@ -291,6 +270,7 @@ function App() {
   
           // Create a new event with start timestamp and duration
           processed.push({
+            id: messages[i].id,
             type: "CONVERSATION_EVENT",
             content: `Phone call duration: ${duration} seconds`,
             timestamp: startTime,
@@ -354,6 +334,8 @@ function App() {
         allMessages.push(message);
       });
   
+
+      setChatLoading(false);
       // Set the chat with the processed messages, even if empty
       setChat(allMessages);
     } catch (error) {
@@ -487,6 +469,15 @@ function App() {
       try {
         if (token) {
           fetchMemories();
+
+          const prefsRes = await fetch(`${api}/user_preferences`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const prefsData = await prefsRes.json();
+
+          setIsMemoryEnabled(prefsData.memory_enabled !== false); // Default to true if not set
+          setIsChatEnabled(prefsData.chat_enabled !== false); // Default to true if not set
+          setLoadingPreferences(false);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -554,6 +545,59 @@ function App() {
       setDisconnecting(false);
     }
   };
+
+  const handleMemoryToggle = async (value, ntoken) => {
+    if (ntoken) {
+      setIsTogglingMemory(true);
+      try {
+        const response = await fetch(`${api}/update_preferences`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${ntoken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ 
+            memory_enabled: value 
+          })
+        });
+        
+        if (response.ok) {
+          setIsMemoryEnabled(value);
+        }
+      } catch (error) {
+        console.error("Error updating memory preference:", error);
+      } finally {
+        setIsTogglingMemory(false);
+      }
+    }
+  };
+  
+  const handleChatToggle = async (value, ntoken) => {
+    if (ntoken) {
+      setIsTogglingChat(true);
+      try {
+        const response = await fetch(`${api}/update_preferences`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${ntoken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ 
+            chat_enabled: value 
+          })
+        });
+        
+        if (response.ok) {
+          setIsChatEnabled(value);
+        }
+      } catch (error) {
+        console.error("Error updating chat preference:", error);
+      } finally {
+        setIsTogglingChat(false);
+      }
+    }
+  };
+  
 
   const renderConversing = () => {
     if (!isWsOpen) {
@@ -705,10 +749,20 @@ function App() {
             memories={memories}
             MemoryCard={MemoryCard}
             title="Memories"
+            onClear={handleClearMemories}
+            api={api}
+            toggleComponent={
+              <Switch
+                isChecked={isMemoryEnabled}
+                onChange={(value) => handleMemoryToggle(value, token)}
+                isDisabled={isTogglingMemory}
+                isLoading={loadingPreferences}
+              />
+            }
           >
             {memories &&
                 memories.map((memory, i) => (
-                  <MemoryCard key={i} memory={memory} />
+                  <MemoryCard key={i} memory={memory} token={token} api={api} onDelete={handleDeleteMemory} />
                 ))}
           </CollapsibleMemoriesPanel>
           <CollapsibleMemoriesPanel
@@ -721,6 +775,18 @@ function App() {
                 toggleExpandChat(prev => !prev)
               }
             }}
+            onClear={handleClearChat}
+            api={api}
+            token={token}
+            toggleComponent={
+              <Switch 
+                isChecked={isChatEnabled}
+                onChange={value => handleChatToggle(value, token)}
+                isDisabled={isTogglingChat}
+                isLoading={loadingPreferences}
+              />
+            }
+            toggleLabel="Save"
           >
             <div style={{
               position: "relative",
@@ -736,7 +802,7 @@ function App() {
                 background: "rgba(255, 255, 255, 0.25)",
                 display: "flex"
               }} />
-              {!chat || !chat.length || !isWsOpen ?
+              {chatLoading || !isWsOpen ?
               <div style={{
                 width: '100%',
                 display: 'flex',
@@ -771,7 +837,7 @@ function App() {
 
                   setLoadingChat(true);
                 }
-              }} isLoading={loadingChat} />}
+              }} isLoading={loadingChat} token={token} api={api} onDeleteMessage={handleDeleteMessage} />}
             </div>
           </CollapsibleMemoriesPanel>
       </div>
