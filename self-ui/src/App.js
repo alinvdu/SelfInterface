@@ -450,6 +450,8 @@ function App() {
 
             if (token) {
               fetchConversationHistory();
+            } else {
+              setChatLoading(false);
             }
 
             // Set sessionId and create WebSocket connection
@@ -751,7 +753,7 @@ function App() {
             title="Memories"
             onClear={handleClearMemories}
             api={api}
-            toggleComponent={
+            toggleComponent={token &&
               <Switch
                 isChecked={isMemoryEnabled}
                 onChange={(value) => handleMemoryToggle(value, token)}
@@ -778,7 +780,7 @@ function App() {
             onClear={handleClearChat}
             api={api}
             token={token}
-            toggleComponent={
+            toggleComponent={token &&
               <Switch 
                 isChecked={isChatEnabled}
                 onChange={value => handleChatToggle(value, token)}

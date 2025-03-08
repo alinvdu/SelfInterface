@@ -209,6 +209,38 @@ Important:
 - Do not try to combine languages together.
 """.strip()
 
+from cryptography.fernet import Fernet
+
+## Cryptography
+def get_encryption_key():
+    key = os.environ.get("ENCRYPTION_KEY")
+    key = key.encode()
+    return key
+
+def get_cipher():
+    key = get_encryption_key()
+    return Fernet(key)
+
+def encrypt_text(text):
+    if not text:
+        return text
+    cipher = get_cipher()
+    # Convert to bytes, encrypt, then encode as base64 for storage
+    encrypted_data = cipher.encrypt(text.encode())
+    return base64.b64encode(encrypted_data).decode()
+
+def decrypt_text(encrypted_text):
+    if not encrypted_text:
+        return encrypted_text
+    cipher = get_cipher()
+    try:
+        # Convert from base64, then decrypt
+        decrypted_data = cipher.decrypt(base64.b64decode(encrypted_text))
+        return decrypted_data.decode()
+    except Exception as e:
+        print(f"Error decrypting text: {e}")
+        return "[Decryption Error]"
+
 # --- Helper functions for authentication and extraction ---
 async def get_optional_user(authorization: Optional[str] = None):
     if not authorization or not authorization.startswith("Bearer "):
@@ -334,7 +366,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 @pc.on("icecandidate")
                 def on_icecandidate(candidate):
-                    print('ice cndidate')
+                    print('ice candidate')
                     asyncio.ensure_future(websocket.send_json({
                         "type": "ice-candidate",
                         "candidate": candidate.to_json(),
@@ -519,10 +551,11 @@ async def websocket_endpoint(websocket: WebSocket):
             elif data["type"] == "rtc_disconnect":
                 session_id = data.get("sessionId")
 
-                memory_enabled = get_memory_enabled(user['uid'])
+                if user:
+                    memory_enabled = get_memory_enabled(user['uid'])
 
-                if memory_enabled:
-                    asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
+                    if memory_enabled:
+                        asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
                 
                 # Close the peer connection if it exists
                 if session_id in peer_connections:
@@ -817,11 +850,13 @@ async def finalize_conversation(
             record_id = str(uuid.uuid4())
             record = {
                 "_id": record_id,
-                "text": text,
+                "chunk_text": text,
+                "text": encrypt_text(text),
                 "user_id": user["uid"],
                 "timestamp": datetime.utcnow().isoformat(),
                 "category": category,
-                "tags": [category]
+                "tags": [category],
+                "is_encrypted": True
             }
 
             search_results = pinecone_index.search_records(
@@ -866,11 +901,13 @@ async def finalize_conversation(
         
         record_summary = {
             "_id": str(uuid.uuid4()),
-            "text": summary_text,
+            "chunk_text": summary_text,
+            "text": encrypt_text(summary_text),
             "user_id": user["uid"],
             "timestamp": datetime.utcnow().isoformat(),
             "category": "conversation_summary",
-            "tags": ["summary"]
+            "tags": ["summary"],
+            "is_encrypted": True
         }
         pinecone_index.upsert_records(namespace, [record_summary])
 
@@ -1126,8 +1163,12 @@ async def process_message(
             for match in result.get("hits", []):
                 fields = match.get("fields", {})
                 if "text" in fields:
+                    text = fields["text"]
+                    if fields.get("is_encrypted", False):
+                        text = decrypt_text(text)
+
                     category = fields.get("category", "Unknown Category")
-                    memories.append("Category: " + category + "\n Memory: " + fields["text"])
+                    memories.append("Category: " + category + "\n Memory: " + text)
 
             if memories:
                 retrieved_memories_text = (
@@ -1163,13 +1204,23 @@ async def retrieve_memories(user: dict = Depends(verify_token)):
         include_metadata=True
     )
 
-    memories = [{
-        "id": match["id"],
-        "text": match["metadata"]["text"],
-        "category": match["metadata"]["category"],
-        "timestamp": match["metadata"]["timestamp"]
-    } for match in results.get("matches", [])]
+    memories = []
+    for match in results.get("matches", []):
+        text = match["metadata"]["text"]
+        
+        # Decrypt if the text is encrypted
+        if match["metadata"].get("is_encrypted", False):
+            text = decrypt_text(text)
+            
+        memories.append({
+            "id": match["id"],
+            "text": text,
+            "category": match["metadata"]["category"],
+            "timestamp": match["metadata"]["timestamp"]
+        })
+    
     memories.sort(key=lambda x: x["timestamp"], reverse=True)
+
     return JSONResponse(content={"memories": memories})
 
 def get_user_conversations(user_id):
@@ -1196,7 +1247,16 @@ async def user_conversations_endpoint(user: dict = Depends(verify_token)):
     messages_ref = user_ref.collection('messages')
 
     messages = messages_ref.order_by('timestamp', direction=firestore.Query.ASCENDING).stream()
-    message_list = [{"id": message.id, **message.to_dict()} for message in messages]
+    message_list = []
+    
+    for message in messages:
+        message_data = message.to_dict()
+        
+        # Decrypt the content if it's encrypted
+        if message_data.get("is_encrypted", False):
+            message_data["content"] = decrypt_text(message_data["content"])
+            
+        message_list.append({"id": message.id, **message_data})
 
     return {"messages": message_list}
 
@@ -1250,12 +1310,16 @@ def save_conversation_to_firestore_with_timestamp(user_id, session_id, message, 
         conversation_ref = db.collection('users').document(user_id) \
                             .collection('messages')
         
+        message_content = message.get("content", "")
+        encrypted_content = encrypt_text(message_content)
+        
         # Create message data
         message_data = {
             "type": message_type,
-            "content": message.get("content", ""),
+            "content": encrypted_content,
             "role": message.get("role", "system"),
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "is_encrypted": True
         }
     
         # Add message to Firestore
@@ -1277,12 +1341,16 @@ def save_conversation_to_firestore(user_id, session_id, message, message_type="C
         conversation_ref = db.collection('users').document(user_id) \
                             .collection('messages')
         
+        message_content = message.get("content", "")
+        encrypted_content = encrypt_text(message_content)
+        
         # Create message data
         message_data = {
             "type": message_type,
-            "content": message.get("content", ""),
+            "content": encrypted_content,
             "role": message.get("role", "system"),
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "is_encrypted": True
         }
         
         # Add message to Firestore
@@ -1308,4 +1376,3 @@ def save_call_event_to_firestore(user_id, session_id, event_type="started"):
     
     # Add event to Firestore
     conversation_ref.add(message_data)
-
