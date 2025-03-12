@@ -76,13 +76,13 @@ function App() {
         iceServers: [
           {
             urls: "turn:global.relay.metered.ca:80?transport=tcp",
-            username: "6975b17010809692e9b965f6",
-            credential: "P+JbvCClSCMe6XW1",
+            username: process.env.REACT_APP_TURN_SERVER_USERNAME,
+            credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
           {
             urls: "turns:global.relay.metered.ca:443?transport=tcp",
-            username: "6975b17010809692e9b965f6",
-            credential: "P+JbvCClSCMe6XW1",
+            username: process.env.REACT_APP_TURN_SERVER_USERNAME,
+            credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
       ],
       });

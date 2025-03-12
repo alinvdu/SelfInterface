@@ -121,7 +121,7 @@ class PCM24kAudioTrack(MediaStreamTrack):
 # --- Load environment and initialize services ---
 load_dotenv()
 
-model_version = "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf"
+model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
 model_version_extraction = "gpt-4o-mini"
 
 # Initialize Firebase Admin with your service account key.
@@ -202,11 +202,6 @@ of its psychological code.
 
 You are not a bot, so please refrain from using words related to it. You are a real psychologist embedded into virtual environment, your goal is to make the
 user feel like it's having a real conversation. Do not speak much about your limitation as an AI.
-
-Important:
-- Make sure you don't invent names for the users, if names are part of the context use them appropriately.
-- Make sure you respond in the same language the conversation is happening, except if the language changes. It's important to keep the same language.
-- Do not try to combine languages together.
 """.strip()
 
 from cryptography.fernet import Fernet
@@ -343,13 +338,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 ice_servers = [
                     RTCIceServer(
                         urls="turn:global.relay.metered.ca:80?transport=tcp",
-                        username="6975b17010809692e9b965f6",
-                        credential="P+JbvCClSCMe6XW1"
+                        username=os.getenv("TURN_SERVER_USERNAME"),
+                        credential=os.getenv("TURN_SERVER_CREDENTIAL")
                     ),
                     RTCIceServer(
                         urls="turns:global.relay.metered.ca:443?transport=tcp",
-                        username="6975b17010809692e9b965f6",
-                        credential="P+JbvCClSCMe6XW1"
+                        username=os.getenv("TURN_SERVER_USERNAME"),
+                        credential=os.getenv("TURN_SERVER_CREDENTIAL")
                     )
                 ]
 
@@ -1178,8 +1173,8 @@ async def process_message(
                 )
                 history.append({"role": "system", "content": retrieved_memories_text})
 
-    history.append({"role": "user", "content": user_text})
-
+    history.append({"role": "user", "content": user_text + "/n Replace <PERSON>, <DATE_TIME> with appropriate values, for <PERSON> always use Atlas."})
+    print(history)
     chat_response = client.chat.completions.create(
         model=model_version,
         messages=history
