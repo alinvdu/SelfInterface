@@ -6,7 +6,7 @@ import { HiDotsVertical } from "react-icons/hi";
 
 const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, api, children, expanded=false,
     toggleExpanded, canBeToggled=true, title = "Memories", onClear=null, toggleComponent = null,
-    toggleLabel = "" }) => {
+    toggleLabel = "", extraStyles = {} }) => {
   const [isExpandedInternal, setIsExpandedInternal] = useState(openedByDefault);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -85,8 +85,9 @@ const CollapsibleMemoriesPanel = ({ token, requiresAccount, openedByDefault, api
         zIndex: 2,
         cursor: !isExpanded ? "pointer" : "default",
         perspective: "500px",
-        maxHeight: "50%",
-        display: "flex"
+        display: "flex",
+        minHeight: 45,
+        ...extraStyles
       }}
       onClick={!isExpanded && canBeToggled ? () => toggleExpand() : null}
     >

@@ -241,6 +241,7 @@ function App() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
   const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
+  const [isMemoryExpanded, toggleMemoryExpanded] = useState(false)
 
   const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
   const [isChatEnabled, setIsChatEnabled] = useState(true);
@@ -743,7 +744,10 @@ function App() {
         position: "absolute",
         top: isMobile ? "150px" : "100px",
         left: "10px",
-        bottom: isMobile ? "150px" : "20px",
+        bottom: isMobile ? "100px" : "20px",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0
       }}>
           <CollapsibleMemoriesPanel
             token={token}
@@ -761,6 +765,13 @@ function App() {
                 isLoading={loadingPreferences}
               />
             }
+            expanded={isMemoryExpanded}
+            toggleExpanded={() => {
+              toggleMemoryExpanded(prev => !prev)
+            }}
+            extraStyles={{
+              "maxHeight": isMobile && isChatExpanded ? "50%" : ""
+            }}
           >
             {memories &&
                 memories.map((memory, i) => (
@@ -789,6 +800,9 @@ function App() {
               />
             }
             toggleLabel="Save"
+            extraStyles={{
+              "maxHeight": isMobile && isMemoryExpanded ? "50%" : ""
+            }}
           >
             <div style={{
               position: "relative",
@@ -845,7 +859,7 @@ function App() {
       </div>
       <div style={{
         position: "absolute",
-        bottom: "50px",
+        bottom: isMobile ? "20px" : "50px",
         right: "50%",
         display: "flex",
         transform: "translateX(50%)",

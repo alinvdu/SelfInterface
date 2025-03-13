@@ -21,7 +21,7 @@ const LoginButton = ({ isMobile }) => {
         </div>
       ) : (
         <div>
-          <span>Sign in to access more features!</span>
+          {!isMobile && <span>Sign in to access more features!</span>}
           <button style={{
             marginLeft: 10,
             padding: "5px 15px",
