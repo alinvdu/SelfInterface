@@ -75,12 +75,12 @@ function App() {
         // iceTransportPolicy: "relay",
         iceServers: [
           {
-            urls: "turn:global.relay.metered.ca:80?transport=tcp",
+            urls: "turn:standard.relay.metered.ca:80?transport=tcp",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
           {
-            urls: "turns:global.relay.metered.ca:443?transport=tcp",
+            urls: "turns:standard.relay.metered.ca:443?transport=tcp",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },

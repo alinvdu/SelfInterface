@@ -337,12 +337,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Define STUN and TURN servers
                 ice_servers = [
                     RTCIceServer(
-                        urls="turn:global.relay.metered.ca:80?transport=tcp",
+                        urls="turn:standard.relay.metered.ca:80?transport=tcp",
                         username=os.getenv("TURN_SERVER_USERNAME"),
                         credential=os.getenv("TURN_SERVER_CREDENTIAL")
                     ),
                     RTCIceServer(
-                        urls="turns:global.relay.metered.ca:443?transport=tcp",
+                        urls="turns:standard.relay.metered.ca:443?transport=tcp",
                         username=os.getenv("TURN_SERVER_USERNAME"),
                         credential=os.getenv("TURN_SERVER_CREDENTIAL")
                     )
