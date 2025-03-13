@@ -21,7 +21,7 @@ import { formatDateSeparator, formatDuration } from "./utils.js";
 import MemoryCard from "./components/MemoryCard.js";
 import Switch from "./components/Switch.js";
 
-const api = "https://selfinterface-simple-env.up.railway.app";
+const api = "https://selfai.live";
 
 // --- Background Scene Component ---
 function BackgroundScene({ isTalking }) {
