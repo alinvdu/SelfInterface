@@ -68,3 +68,7 @@ body {
 .assistantSlideIn {
   animation: slideInFromRight 0.8s ease-out; /* or 0.25s – tweak as you like */
 }
+
+.text-areas::placeholder {
+  color: white;
+}

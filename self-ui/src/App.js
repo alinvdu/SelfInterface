@@ -463,6 +463,9 @@ function App() {
 
             // Set sessionId and create WebSocket connection
             setSessionId(newSessionData.session_id);
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             createAndConnectWs(newSessionData.session_id, token);
           } catch (error) {
             console.error("Error creating session and proactive message:", error);
@@ -891,7 +894,9 @@ function App() {
             borderRadius: 8,
             flex: 1,
             color: "rgba(0, 0, 0, 0.65)"
-          }}>
+          }}
+          title={assistantMessage}
+          >
             {assistantMessage.length > 200 ? assistantMessage.substring(0, 197) + '...' : assistantMessage}
           </div>
           <img style={{
@@ -938,7 +943,9 @@ function App() {
             padding: "6px 8px",
             borderRadius: 8,
             maxWidth: "70%"
-          }}>
+          }}
+          title={userVoiceMessage}
+          >
           {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > 200 ? userVoiceMessage.substring(0, 197) + '...' : userVoiceMessage}
           </div>
         </div>}

@@ -451,6 +451,7 @@ async def websocket_endpoint(websocket: WebSocket):
     if token:
         user = firebase_auth.verify_id_token(token)
 
+    print('chat histories keys in ws is: ', chat_histories.keys())
     if len(chat_histories[session_id]) == 1:
          asyncio.create_task(generate_and_send_proactive_message(user, session_id, websocket))
 
@@ -559,7 +560,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         sample_rate=48000,
                         channels=2,
                         interim_results=True,
-                        utterance_end_ms="1000",
+                        utterance_end_ms="3000",
                         vad_events=True
                     )
 
@@ -1065,6 +1066,7 @@ async def new_session():
     chat_histories[session_id] = [
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
+    print('chat histories keys in new_session is: ', chat_histories.keys())
     return {"session_id": session_id}
 
 @app.post("/stop_playing")
