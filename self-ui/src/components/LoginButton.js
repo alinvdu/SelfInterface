@@ -30,7 +30,7 @@ const LoginButton = ({ isMobile }) => {
             border: '1px solid rgba(255, 255, 255, 0.6)',
             color: 'black',
             fontSize: '14px'
-          }} onClick={signInWithGoogle}>Log In with Google</button>
+          }} onClick={signInWithGoogle}>{isMobile ? "Log In" : "Log In with Google"}</button>
         </div>
       )}
     </div>

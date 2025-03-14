@@ -875,7 +875,7 @@ function App() {
         transform: "translateX(50%)",
         display: "flex",
         flexDirection: "column",
-        width: 450
+        width: isMobile ? 350 : 450
       }}>
         {assistantMessage && 
         <div style={{
