@@ -294,8 +294,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-stop_event = asyncio.Event()
-
 # In-memory conversation history: session_id -> list of messages
 conversation_histories = {}
 chat_histories = {}
@@ -1068,13 +1066,6 @@ async def new_session():
     ]
     print('chat histories keys in new_session is: ', chat_histories.keys())
     return {"session_id": session_id}
-
-@app.post("/stop_playing")
-async def stop_playing():
-    stop_event.set()
-    return {"message": "Playback stopping..."}
-
-# Add these endpoints to your FastAPI backend
 
 @app.post("/clear_memories")
 async def clear_memories(user: dict = Depends(verify_token)):

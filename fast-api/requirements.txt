@@ -13,3 +13,4 @@ av==13.1.0
 deepgram-sdk==3.10.0
 cryptography==44.0.2
 pydub==0.25.1
+gunicorn==23.0.0
