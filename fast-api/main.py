@@ -56,8 +56,6 @@ from fractions import Fraction
 from aiortc.contrib.media import MediaStreamTrack
 from av import AudioFrame
 
-import librosa
-
 import numpy as np
 import base64
 

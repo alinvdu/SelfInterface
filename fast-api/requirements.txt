@@ -12,3 +12,4 @@ numpy==2.2.3
 av==13.1.0
 deepgram-sdk==3.10.0
 cryptography==44.0.2
+pydub==0.25.1
