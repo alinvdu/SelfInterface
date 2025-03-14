@@ -105,7 +105,6 @@ function App() {
       );
 
       peerConnectionRef.current.onicecandidate = (event) => {
-        console.log("ice event", event);
         if (event.candidate) {
           wsRef.current.send(
             JSON.stringify({
@@ -118,7 +117,6 @@ function App() {
       };
 
       peerConnectionRef.current.ontrack = (event) => {
-        console.log('got new track')
         setPhoneCalling(false);
         setConversing(true);
         const audio = new Audio();
@@ -184,7 +182,6 @@ function App() {
                   if (!silenceTimeout) {
                       silenceTimeout = setTimeout(() => {
                           setIsTalking(isActive);
-                          console.log("Silence detected - isTalking set to false");
                       }, 200);
                   }
               }
@@ -248,6 +245,8 @@ function App() {
   const [isTogglingMemory, setIsTogglingMemory] = useState(false);
   const [isTogglingChat, setIsTogglingChat] = useState(false);
   const [loadingPreferences, setLoadingPreferences] = useState(true);
+  const [userVoiceMessage, setUserVoiceMessage] = useState(null);
+  const [assistantMessage, setAssistantVoiceMessage] = useState(null)
 
   const processPhoneCallEvents = (messages) => {
     const processed = [];
@@ -376,10 +375,6 @@ function App() {
       const message = JSON.parse(event.data);
       if (message.type === "answer") {
         await peerConnectionRef.current.setRemoteDescription(message)
-        console.log(
-          "Client SDP:",
-          peerConnectionRef.current.remoteDescription.sdp
-        );
       } else if (message.type === "ice-candidate") {
         await peerConnectionRef.current.addIceCandidate(
           new RTCIceCandidate(message.candidate)
@@ -412,6 +407,10 @@ function App() {
           duration: formatDuration(duration || 0)
         }])
         convDetails.current = null 
+      } else if (message.type === "user_voice_message") {
+        setUserVoiceMessage(message.text)
+      } else if (message.type === "assistant_voice_message") {
+        setAssistantVoiceMessage(message.text)
       }
     };
 
@@ -857,6 +856,40 @@ function App() {
             </div>
           </CollapsibleMemoriesPanel>
       </div>
+      {conversing &&
+      <div style={{
+        position: "absolute",
+        bottom: "140px",
+        right: "50%",
+        display: "flex",
+        transform: "translateX(50%)",
+        display: "flex",
+        flexDirection: "column",
+        width: 400
+      }}>
+        {assistantMessage && <div style={{
+          alignSelf: "flex-end",
+          backgroundColor: 'rgba(255, 255, 255, 0.65)',
+          color: 'black',
+          border: '1px solid rgba(255, 255, 255, 0.3)',
+          padding: "4px 8px",
+          borderRadius: 5,
+          maxWidth: "70%"
+        }}>
+          {"Atlas: " + assistantMessage}
+        </div>}
+       {userVoiceMessage && <div style={{
+          alignSelf: "flex-start",
+          marginTop: 10,
+          backgroundColor: 'rgba(100, 150, 255, 0.85)',
+          border: "1px solid rgba(255, 255, 255, 0.3)",
+          padding: "4px 8px",
+          borderRadius: 5,
+          maxWidth: "70%"
+        }}>
+        {"User: " + userVoiceMessage}
+        </div>}
+      </div>}
       <div style={{
         position: "absolute",
         bottom: isMobile ? "20px" : "50px",

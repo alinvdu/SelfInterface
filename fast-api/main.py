@@ -56,73 +56,201 @@ from fractions import Fraction
 from aiortc.contrib.media import MediaStreamTrack
 from av import AudioFrame
 
+import librosa
+
+import numpy as np
+import base64
+
+from av.audio.resampler import AudioResampler
+
+# Example usage:
+# debug_info = analyze_audio_chunk(openai_chunk)
+# print(debug_info)
+
+def convert_openai_pcm_to_48k(pcm_data):
+    """
+    Convert OpenAI PCM data (24kHz, 16-bit signed, little-endian) to 48kHz using pydub.
+    Skip processing entirely if the input is empty.
+    """
+    from pydub import AudioSegment
+    
+    # Skip processing if empty
+    if not pcm_data or len(pcm_data) == 0:
+        return None  # Return None to indicate chunk should be skipped
+    
+    # Ensure even number of bytes
+    if len(pcm_data) % 2 != 0:
+        pcm_data = pcm_data[:-1]
+        
+        # If trimming made it empty, skip it
+        if len(pcm_data) == 0:
+            return None
+    
+    # Create AudioSegment from raw PCM bytes
+    audio_24k = AudioSegment(
+        data=pcm_data,
+        sample_width=2,    # 16-bit = 2 bytes per sample
+        frame_rate=24000,  # in Hz
+        channels=1         # mono
+    )
+    
+    # Resample to 48kHz
+    audio_48k = audio_24k.set_frame_rate(48000)
+    
+    # Return raw PCM data
+    return audio_48k.raw_data
+
 END_OF_STREAM_SENTINEL = object()
 class PCM24kAudioTrack(MediaStreamTrack):
     kind = "audio"
 
-    def __init__(self, sync_audio_queue):
+    def __init__(self, sample_rate=24000, frame_duration_ms=20):
         super().__init__()
-        self.sync_audio_queue = sync_audio_queue
-        self.frame_queue = asyncio.Queue()
-        self.loop = asyncio.get_event_loop()
+        self.sample_rate = sample_rate
+        self.frame_duration_ms = frame_duration_ms
+        self.samples_per_frame = int(sample_rate * (frame_duration_ms / 1000.0))
         self.frame_pts = 0
-        self.start_time = None
-        self.last_frame = None
+        self.time_base = Fraction(1, sample_rate)
 
-        # Start one processing thread that reads and splits PCM bytes
-        self._process_thread = threading.Thread(target=self._process_data, daemon=True)
-        self._process_thread.start()
-        
-    def _reset_time(self):
-        self.pts = 0
+        # This queue is filled by the TTS or other source
+        self._pcm_queue = asyncio.Queue()
 
-    def _process_data(self):
-        # For 24kHz, 20ms frame: (24000 / 50) samples per frame;
-        # with 16-bit samples (2 bytes each) => 960 bytes/frame.
-        frame_size = (24000 // 50) * 2  # 960 bytes per frame
-        buffer = bytearray()
+        # This queue is used internally for frames to be returned in recv()
+        self._frame_queue = asyncio.Queue()
+
+        # Start a background producer task that splits PCM into frames at 20ms intervals
+        self._producer_task = asyncio.create_task(self._producer_loop())
+
+        self.resampler = AudioResampler(
+            format="s16",
+            layout="mono",
+            rate=48000  # target 48kHz for WebRTC
+        )
+
+        self._frame_buffer = []
+        self.buffer = bytearray()
+        self.stop_producing = False
+
+    def clear_queues(self):
+        self.stop_producing = True
+        while not self._pcm_queue.empty():
+            self._pcm_queue.get_nowait()
+        while not self._frame_queue.empty():
+            self._frame_queue.get_nowait()
+        self._frame_buffer.clear()
+        self.buffer.clear()
+        self.stop_producing = False
+
+    async def _producer_loop(self):
+        """
+        Runs in the background, waking up roughly every `frame_duration_ms`,
+        pulling enough samples from _pcm_queue, and creating an AudioFrame.
+        """
+        frame_bytes = self.samples_per_frame * 2  # 16-bit mono => 2 bytes/sample
+
         while True:
-            try:
-                chunk = self.sync_audio_queue.get()
-                buffer.extend(chunk)
-                # Process complete frames from the buffer
-                while len(buffer) >= frame_size:
-                    frame_bytes = bytes(buffer[:frame_size])
-                    del buffer[:frame_size]
+            if self.stop_producing:
+                asyncio.sleep(0.05)
+            else:
+                buffer = self.buffer
+                start_time = time.monotonic()
+                # Replenish buffer from the PCM queue until we have enough for 1 frame
+                while len(buffer) < frame_bytes:
                     try:
-                        # Convert bytes to numpy array and create an AudioFrame
-                        samples = np.frombuffer(frame_bytes, dtype=np.int16).reshape(1, -1)
-                        frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
-                        frame.sample_rate = 24000
-                        frame.pts = self.frame_pts
-                        frame.time_base = Fraction(1, 24000)
-                        self.frame_pts += frame.samples
-                        # Queue the frame so that recv() can deliver it
-                        self.loop.call_soon_threadsafe(self.frame_queue.put_nowait, frame)
-                    except Exception as e:
-                        print("Error decoding frame:", e)
-            except Exception as e:
-                print(f"Error in processing thread: {e}")
-                break
+                        # Wait for data with a short timeout
+                        chunk = await asyncio.wait_for(self._pcm_queue.get(), timeout=0.5)
+                        if chunk is None:
+                            # If we ever push None to indicate EOF, break out
+                            return
+                        buffer.extend(chunk)
+                    except asyncio.TimeoutError:
+                        # If no data is available after timeout, provide a silent frame
+                        if len(buffer) == 0:
+                            silent_frame = np.zeros((1, self.samples_per_frame), dtype=np.int16)
+                            frame = AudioFrame.from_ndarray(silent_frame, format="s16", layout="mono")
+                            frame.sample_rate = self.sample_rate
+                            frame.pts = self.frame_pts
+                            frame.time_base = self.time_base
+                            self.frame_pts += self.samples_per_frame
+                            await self._frame_queue.put(frame)
+                            break  # Break to the sleep cycle
+                        continue  # Otherwise continue waiting for data
+
+                # If we have data to process
+                if len(buffer) >= frame_bytes:
+                    # Slice out one frame's worth
+                    frame_data = buffer[:frame_bytes]
+                    del buffer[:frame_bytes]
+
+                    # Create an AudioFrame
+                    samples = np.frombuffer(frame_data, dtype=np.int16).reshape(1, -1)
+                    frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+                    frame.sample_rate = self.sample_rate
+                    frame.pts = self.frame_pts
+                    frame.time_base = self.time_base
+                    self.frame_pts += self.samples_per_frame
+
+                    # Push it to the _frame_queue
+                    await self._frame_queue.put(frame)
+
+                # Sleep to maintain ~20ms cadence
+                elapsed = (time.monotonic() - start_time) * 1000
+                delay = self.frame_duration_ms - elapsed
+                if delay > 0:
+                    await asyncio.sleep(delay / 1000)
 
     async def recv(self):
-        frame = await self.frame_queue.get()
+        """
+        Called by aiortc repeatedly. We just pop the next frame
+        from our internal frame queue (already rate-limited).
+        """
+        # If frames exist in buffer, pop and return immediately
+        if self._frame_buffer:
+            return self._frame_buffer.pop(0)
 
-        if self.last_frame:
-            expected_delay = (frame.pts - self.last_frame.pts) / 24000
-            actual_delay = time.monotonic() - self.last_frame_timestamp
-            drift_correction = expected_delay - actual_delay
-            await asyncio.sleep(max(0, drift_correction))
+        # Otherwise, get new 24kHz frame from source
+        frame_24k = await self._frame_queue.get()
 
-        self.last_frame = frame
-        self.last_frame_timestamp = time.monotonic()
-        return frame
+        # Resample, might return multiple frames
+        resampled_frames = self.resampler.resample(frame_24k)
+
+        # Ensure we handle list correctly
+        if not resampled_frames:
+            # If no frames produced, wait for next frame
+            return await self.recv()
+
+        # If single frame returned, just return it
+        if len(resampled_frames) == 1:
+            return resampled_frames[0]
+
+        # If multiple frames, buffer the rest and return first
+        self._frame_buffer.extend(resampled_frames[1:])
+        return resampled_frames[0]
+
+    def write_pcm(self, pcm_data: bytes):
+        """
+        Called externally (e.g., from TTS code) to push raw PCM to this track.
+        """
+        self._pcm_queue.put_nowait(pcm_data)
+
+    def stop(self):
+        """
+        Called when you’re done; signals _producer_loop to exit
+        """
+        super().stop()
+        self._pcm_queue.put_nowait(None)  # signal EOF
+        if self._producer_task:
+            self._producer_task.cancel()
 
 # --- Load environment and initialize services ---
 load_dotenv()
 
+from concurrent.futures import ThreadPoolExecutor
+
 model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
 model_version_extraction = "gpt-4o-mini"
+
+executor = ThreadPoolExecutor(max_workers=4)
 
 # Initialize Firebase Admin with your service account key.
 import base64
@@ -283,7 +411,6 @@ class SessionState:
         self.pc = None          # Peer connection
         self.audio_task = None  # Audio processing task
         self.sentence_accumulator = []
-        self.processing_event = threading.Event()
 
 import logging
 import traceback
@@ -404,8 +531,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             )
                             full_sentence = response.choices[0].message.content
                             print('Full sentence is: ', full_sentence)
-                            if session_state.processing_event.is_set():
-                                return
                             asyncio.run_coroutine_threadsafe(
                                 process_message(session_state.pc, full_sentence, session_id, user, websocket),
                                 session_state.loop
@@ -480,6 +605,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 proactive_text = random.choice(empathetic_greetings)
                 print('Proactive message for phone call: ', proactive_text)
+                await websocket.send_json({
+                    "type": "assistant_voice_message",
+                    "text": proactive_text
+                })
                 history = conversation_histories[session_id]
                 if not history:
                     conversation_histories[session_id] = {
@@ -566,10 +695,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Clean up audio resources
                     if hasattr(session_state, "audio_track") and session_state.audio_track:
                         session_state.audio_track = None
-                    
-                    # Clear processing events
-                    if hasattr(session_state, "processing_event"):
-                        session_state.processing_event.clear()
                         
                     # Clear PC reference
                     session_state.pc = None
@@ -639,43 +764,50 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
     if not session_state:
         session_state = SessionState()
         session_states[session_id] = session_state
+
+    if hasattr(session_state, "fill_task"):
+        session_state.fill_task.cancel()
+        session_state.audio_track.clear_queues()
+
+    new_tts_event = uuid.uuid4()
+    session_state.current_tts_event = new_tts_event
     
     # Check if an existing audio track is available
     if not hasattr(session_state, "audio_track") or session_state.audio_track is None:
         sync_audio_queue = queue.Queue()
-        audio_track = PCM24kAudioTrack(sync_audio_queue)
+        audio_track = PCM24kAudioTrack(sample_rate=24000, frame_duration_ms=20)
         pc.addTrack(audio_track)
         session_state.audio_track = audio_track
         session_state.sync_audio_queue = sync_audio_queue
     else:
-        print(f"Session {session_id}: Reusing existing audio track for TTS")
         sync_audio_queue = session_state.sync_audio_queue
-        session_state.audio_track._reset_time()
+        audio_track = session_state.audio_track
 
     # Create a future that will be set when audio processing is done
     processing_complete = asyncio.Future()
     
-    async def monitor_frame_queue():
-        # Give some time for audio to be processed and queued
-        await asyncio.sleep(0.5)
+    # async def monitor_frame_queue():
+    #     # Give some time for audio to be processed and queued
+    #     await asyncio.sleep(0.5)
         
-        while not processing_complete.done():
-            current_queue_size = session_state.audio_track.frame_queue.qsize()
-            if current_queue_size == 0:
-                # Wait a bit to ensure no more frames are coming
-                await asyncio.sleep(0.5)
-                if session_state.audio_track.frame_queue.qsize() == 0:
-                    print('Audio processing complete, notifying client')
-                    session_state.processing_event.clear()
-                    await websocket.send_json({
-                        "type": "FINISHED_PROCESSING"
-                    })
-                    processing_complete.set_result(True)
-                    break
-            await asyncio.sleep(0.2)
+    #     while not processing_complete.done():
+    #         current_queue_size = session_state.audio_track._frame_queue.qsize()
+    #         if current_queue_size == 0:
+    #             # Wait a bit to ensure no more frames are coming
+    #             await asyncio.sleep(0.5)
+    #             if session_state.audio_track._frame_queue.qsize() == 0:
+    #                 print('Audio processing complete, notifying client')
+    #                 session_state.processing_event.clear()
+    #                 await websocket.send_json({
+    #                     "type": "FINISHED_PROCESSING"
+    #                 })
+    #                 processing_complete.set_result(True)
+    #                 break
+    #         await asyncio.sleep(0.2)
     
-    async def fill_audio_queue():
-        try:
+    async def fill_audio_queue(audio_track, text, my_event_id):
+        loop = asyncio.get_running_loop()
+        def blocking_tts_task():
             with client.audio.speech.with_streaming_response.create(
                 model="tts-1",
                 voice="onyx",
@@ -683,21 +815,33 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
                 response_format="pcm"
             ) as response:
                 for chunk in response.iter_bytes():
-                    sync_audio_queue.put(chunk)
-                # Signal that all audio has been queued
-                print("TTS streaming complete")
-        except Exception as e:
-            print(f"Error in TTS fill task: {e}")
-            processing_complete.set_exception(e)
+                    if session_state.current_tts_event != my_event_id:
+                        print("Cancellation detected, stopping TTS stream.")
+                        break
+                    audio_track.write_pcm(chunk)
 
-    session_state.processing_event.set()
-    await websocket.send_json({
-        "type": "PROCESSING"
-    })
+        try:
+            await loop.run_in_executor(executor, blocking_tts_task)
+        except asyncio.CancelledError:
+            print("TTS streaming was canceled")
+            # Perform additional cleanup if needed
+            raise
+
+    async def fill_task():
+        # session_state.processing_event.set()
+        # await websocket.send_json({
+        #     "type": "PROCESSING"
+        # })
+        try:
+            # Offload TTS to separate thread
+            await fill_audio_queue(audio_track, text, new_tts_event)
+        except Exception as e:
+            print('something happened', e)
+            processing_complete.set_exception(e)
     
     # Start both tasks
-    fill_task = asyncio.create_task(fill_audio_queue())
-    monitor_task = asyncio.create_task(monitor_frame_queue())
+    session_state.fill_task = asyncio.create_task(fill_task())
+    # monitor_task = asyncio.create_task(monitor_frame_queue())
     
     # We could wait here with await asyncio.gather(fill_task, monitor_task)
     # But for non-blocking operation, we'll let them run independently
@@ -1137,6 +1281,11 @@ async def process_message(
     if isChat:
         history = chat_histories[session_id]
     else:
+        print('user_text')
+        await websocket.send_json({
+            "type": "user_voice_message",
+            "text": user_text
+        })
         history = conversation_histories[session_id]
 
     if user:
@@ -1173,14 +1322,17 @@ async def process_message(
                 )
                 history.append({"role": "system", "content": retrieved_memories_text})
 
-    history.append({"role": "user", "content": user_text + "/n Replace <PERSON>, <DATE_TIME> with appropriate values, for <PERSON> always use Atlas."})
-    print(history)
+    history.append({"role": "user", "content": user_text})
     chat_response = client.chat.completions.create(
         model=model_version,
         messages=history
     )
     assistant_text = chat_response.choices[0].message.content
     print('psychologist response is: ', assistant_text)
+    await websocket.send_json({
+        "type": "assistant_voice_message",
+        "text": assistant_text
+    })
     history.append({"role": "assistant", "content": assistant_text})
     
     if not isChat:
