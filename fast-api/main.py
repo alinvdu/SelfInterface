@@ -514,6 +514,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         result_dict = result.to_dict()
                         sentence = result_dict['channel']['alternatives'][0]['transcript']
                         if len(sentence.strip()) > 0:  # Only accumulate non-empty transcripts
+                            async def send_voice_update():
+                                await websocket.send_json({"type": "voice_message_start"})
+                            
+                            # Run it in the existing event loop
+                            asyncio.run_coroutine_threadsafe(
+                                send_voice_update(),
+                                session_state.loop
+                            )
                             session_state.sentence_accumulator.append(sentence)
 
                     # Handler for UtteranceEnd events

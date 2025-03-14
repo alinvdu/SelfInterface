@@ -8,7 +8,8 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 
 import { HiOutlinePhone, HiOutlinePhoneXMark } from "react-icons/hi2";
-import { IoEarOutline } from "react-icons/io5";
+import { RiVoiceprintFill } from "react-icons/ri";
+
 import { BiUserVoice } from "react-icons/bi";
 import { LuBrainCog } from "react-icons/lu";
 
@@ -20,6 +21,9 @@ import Chat from "./components/Chat.js";
 import { formatDateSeparator, formatDuration } from "./utils.js";
 import MemoryCard from "./components/MemoryCard.js";
 import Switch from "./components/Switch.js";
+
+import { FiUser } from "react-icons/fi";
+import LoadingDots from "./components/LoadingDots.js";
 
 const api = "https://selfai.live";
 
@@ -246,7 +250,7 @@ function App() {
   const [isTogglingChat, setIsTogglingChat] = useState(false);
   const [loadingPreferences, setLoadingPreferences] = useState(true);
   const [userVoiceMessage, setUserVoiceMessage] = useState(null);
-  const [assistantMessage, setAssistantVoiceMessage] = useState(null)
+  const [assistantMessage, setAssistantVoiceMessage] = useState(null);
 
   const processPhoneCallEvents = (messages) => {
     const processed = [];
@@ -409,8 +413,11 @@ function App() {
         convDetails.current = null 
       } else if (message.type === "user_voice_message") {
         setUserVoiceMessage(message.text)
+        setAssistantVoiceMessage(null)
       } else if (message.type === "assistant_voice_message") {
         setAssistantVoiceMessage(message.text)
+      } else if (message.type === "voice_message_start") {
+        setUserVoiceMessage("...")
       }
     };
 
@@ -496,7 +503,7 @@ function App() {
       return <LuBrainCog style={{fontSize: 21}} />
     }
 
-    return <IoEarOutline style={{fontSize: 21}} />
+    return <RiVoiceprintFill style={{fontSize: 21}} />
   }
 
   const handleDisconnect = async () => {
@@ -865,29 +872,75 @@ function App() {
         transform: "translateX(50%)",
         display: "flex",
         flexDirection: "column",
-        width: 400
+        width: 450
       }}>
-        {assistantMessage && <div style={{
-          alignSelf: "flex-end",
-          backgroundColor: 'rgba(255, 255, 255, 0.65)',
-          color: 'black',
-          border: '1px solid rgba(255, 255, 255, 0.3)',
-          padding: "4px 8px",
-          borderRadius: 5,
-          maxWidth: "70%"
-        }}>
-          {"Atlas: " + assistantMessage}
+        {assistantMessage && 
+        <div style={{
+          display: "flex",
+          maxWidth: "75%",
+          alignSelf: "flex-end"
+        }}
+        className="assistantSlideIn"
+        >
+          <div style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.35)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            "backdrop-filter": "blur(8px)",
+            "-webkit-backdrop-filter": "blur(8px)",
+            padding: "6px 8px",
+            borderRadius: 8,
+            flex: 1,
+            color: "rgba(0, 0, 0, 0.65)"
+          }}>
+            {assistantMessage.length > 200 ? assistantMessage.substring(0, 197) + '...' : assistantMessage}
+          </div>
+          <img style={{
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            border: "1px solid white",
+            marginLeft: 8
+          }} src={`${process.env.PUBLIC_URL}/assets/atlas-avatar.png`} />
         </div>}
-       {userVoiceMessage && <div style={{
-          alignSelf: "flex-start",
-          marginTop: 10,
-          backgroundColor: 'rgba(100, 150, 255, 0.85)',
-          border: "1px solid rgba(255, 255, 255, 0.3)",
-          padding: "4px 8px",
-          borderRadius: 5,
-          maxWidth: "70%"
-        }}>
-        {"User: " + userVoiceMessage}
+       {userVoiceMessage &&
+       <div style={{
+        display: "flex",
+        maxWidth: "75%",
+        alignSelf: "flex-start",
+        marginTop: 10
+      }}
+      key={userVoiceMessage}
+      className="userSlideIn"
+      >
+        <div style={{
+            display: 'flex',
+            alignItems: "center",
+            justifyContent: "center",
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            border: "1px solid white",
+            marginRight: 8,
+            backgroundColor: 'rgba(0, 0, 0, 0.25)',
+            color: 'white',
+            border: '1px solid rgba(255, 255, 255, 0.4)',
+            "backdrop-filter": "blur(8px)",
+            "-webkit-backdrop-filter": "blur(8px)",
+          }}>
+            <FiUser fontSize={21} style={{marginTop: -1}} />
+          </div>
+        <div style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.25)',
+            color: 'white',
+            border: '1px solid rgba(255, 255, 255, 0.4)',
+            "backdrop-filter": "blur(8px)",
+            "-webkit-backdrop-filter": "blur(8px)",
+            padding: "6px 8px",
+            borderRadius: 8,
+            maxWidth: "70%"
+          }}>
+          {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > 200 ? userVoiceMessage.substring(0, 197) + '...' : userVoiceMessage}
+          </div>
         </div>}
       </div>}
       <div style={{

@@ -35,15 +35,36 @@ body {
   color: #61dafb;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+/* Slide in from the left (for user messages) */
+@keyframes slideInFromLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-100px);
   }
-  to {
-    transform: rotate(360deg);
+  100% {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
-.text-areas::placeholder {
-    color: white;
+/* Slide in from the right (for assistant messages) */
+@keyframes slideInFromRight {
+  0% {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* A quick class for user ephemeral messages */
+.userSlideIn {
+  animation: slideInFromLeft 0.8s ease-out;  /* or 0.25s – tweak as you like */
+}
+
+/* A quick class for assistant ephemeral messages */
+.assistantSlideIn {
+  animation: slideInFromRight 0.8s ease-out; /* or 0.25s – tweak as you like */
 }
