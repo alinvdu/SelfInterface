@@ -677,7 +677,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         channels=2,
                         interim_results=True,
                         utterance_end_ms="1500",
-                        endpointing=1500
+                        endpointing=2000
                     )
 
                     if not dg_connection.start(options):
