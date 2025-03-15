@@ -875,7 +875,8 @@ function App() {
         transform: "translateX(50%)",
         display: "flex",
         flexDirection: "column",
-        width: isMobile ? 350 : 450
+        minWidth: isMobile ? 350 : 450,
+        maxWidth: isMobile ? 350 : 700
       }}>
         {assistantMessage && 
         <div style={{
@@ -897,7 +898,7 @@ function App() {
           }}
           title={assistantMessage}
           >
-            {assistantMessage.length > 200 ? assistantMessage.substring(0, 197) + '...' : assistantMessage}
+            {assistantMessage.length > 700 ? assistantMessage.substring(0, 700) + '...' : assistantMessage}
           </div>
           <img style={{
             width: 40,
@@ -946,7 +947,7 @@ function App() {
           }}
           title={userVoiceMessage}
           >
-          {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > 200 ? userVoiceMessage.substring(0, 197) + '...' : userVoiceMessage}
+          {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > 700 ? userVoiceMessage.substring(0, 700) + '...' : userVoiceMessage}
           </div>
         </div>}
       </div>}
