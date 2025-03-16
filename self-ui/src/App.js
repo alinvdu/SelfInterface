@@ -26,7 +26,7 @@ import { FiUser } from "react-icons/fi";
 import LoadingDots from "./components/LoadingDots.js";
 import { AiOutlineInfo } from "react-icons/ai";
 
-
+const WS_RECONNECT_TIMEOUT = 1500
 
 const api = "https://selfai.live";
 
@@ -261,6 +261,8 @@ function App() {
 
   const prevUserMessageRef = useRef(null);
   const prevAssistantMessageRef = useRef(null);
+  const wsReconnectRef = useRef(null);
+  const manualCloseRef = useRef(false);
 
   const processPhoneCallEvents = (messages) => {
     const processed = [];
@@ -464,7 +466,27 @@ function App() {
         }
         setUserVoiceMessage("...");
         setLatestMessageType('user');
-      }
+      } else if (message.type === "SESSION_NOT_FOUND") {
+        console.log("Session not found, creating a new one");
+        clearTimeout(wsReconnectRef.current);
+        manualCloseRef.current = true;
+        
+        // Create a new session
+        const res = await fetch(api + "/new_session", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        
+        const newSessionData = await res.json();
+        setSessionId(newSessionData.session_id);
+        
+        // Close existing WebSocket
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+
+        // Create a new WebSocket connection with the new session ID
+        createAndConnectWs(newSessionData.session_id, token);
+      } 
     };
 
     wsRef.current.onopen = () => {
@@ -478,9 +500,13 @@ function App() {
       setPhoneCalling(false);
       setIsTalking(false);
       setProcessing(false);
-      setTimeout(() => {
-        createAndConnectWs(currentSessionId, currentToken)
-      }, 500)
+      if (!manualCloseRef.current) {
+        wsReconnectRef.current = setTimeout(() => {  
+          createAndConnectWs(currentSessionId, currentToken)
+        }, WS_RECONNECT_TIMEOUT);
+      } else {
+        manualCloseRef.current = false; // Reset flag
+      }
     }
   }
 
@@ -926,7 +952,7 @@ function App() {
               fontSize: 15
             }}
           >
-            Calm and empathetic. Great listener!
+            Calm, empathetic. Great listener!
           </div>
         </div>
       </div>

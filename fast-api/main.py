@@ -456,6 +456,14 @@ async def websocket_endpoint(websocket: WebSocket):
     if token:
         user = firebase_auth.verify_id_token(token)
 
+    if session_id not in chat_histories:
+        # Send message that session doesn't exist
+        await websocket.send_json({
+            "type": "SESSION_NOT_FOUND",
+            "message": "Session ID not found, please create a new session"
+        })
+        return
+
     if len(chat_histories[session_id]) == 1:
          asyncio.create_task(generate_and_send_proactive_message(user, session_id, websocket))
 
