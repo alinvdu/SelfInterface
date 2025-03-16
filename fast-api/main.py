@@ -453,7 +453,6 @@ async def websocket_endpoint(websocket: WebSocket):
     if token:
         user = firebase_auth.verify_id_token(token)
 
-    print('chat histories keys in ws is: ', chat_histories.keys())
     if len(chat_histories[session_id]) == 1:
          asyncio.create_task(generate_and_send_proactive_message(user, session_id, websocket))
 

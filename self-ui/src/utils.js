@@ -68,3 +68,29 @@ function formatDateSeparator(messageDate) {
   }
 
   export { formatDateSeparator, formatDuration }
+
+  export const isToday = (timestamp) => {
+    const messageDate = new Date(timestamp * 1000);
+    const today = new Date();
+    
+    return messageDate.getDate() === today.getDate() &&
+           messageDate.getMonth() === today.getMonth() &&
+           messageDate.getFullYear() === today.getFullYear();
+  };
+  
+  // Function to check if we need to add a Today separator
+  export const needsTodaySeparator = (chat) => {
+    // If chat is empty, no need for separator
+    if (!chat || chat.length === 0) return false;
+    
+    // Get the last date separator in the chat
+    const lastDateSeparator = [...chat]
+      .reverse()
+      .find(msg => msg.type === 'DATE_SEPARATOR');
+    
+    // If there's no date separator, we need one
+    if (!lastDateSeparator) return true;
+    
+    // Check if the last date separator is for today
+    return !isToday(lastDateSeparator.timestamp);
+  };

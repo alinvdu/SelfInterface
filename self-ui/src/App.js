@@ -18,7 +18,7 @@ import Model from "./Model.js";
 import LoadingDiv from "./components/LoadingDiv";
 import CollapsibleMemoriesPanel from "./components/CollapsiblePanel.js";
 import Chat from "./components/Chat.js";
-import { formatDateSeparator, formatDuration } from "./utils.js";
+import { formatDateSeparator, formatDuration, needsTodaySeparator } from "./utils.js";
 import MemoryCard from "./components/MemoryCard.js";
 import Switch from "./components/Switch.js";
 
@@ -391,10 +391,29 @@ function App() {
       } else if (message.type === "FINISHED_PROCESSING") {
         setProcessing(false);
       } else if (message.type === "CHAT_MESSAGE") {
-        setChat(chat => [...chat, {
-          "role": "assistant",
-          "content": message.message
-        }])
+        setChat(chat => {
+          // Check if we need to add a Today separator
+          const updatedChat = [...chat];
+          const currentTimestamp = Math.floor(Date.now() / 1000); // Current time in seconds
+          
+          // If we need a "Today" separator, add it
+          if (needsTodaySeparator(updatedChat)) {
+            updatedChat.push({
+              type: 'DATE_SEPARATOR',
+              content: 'Today',
+              timestamp: currentTimestamp
+            });
+          }
+          
+          // Add the new message
+          updatedChat.push({
+            "role": "assistant",
+            "content": message.message,
+            "timestamp": currentTimestamp
+          });
+          
+          return updatedChat;
+        });
         setLoadingChat(false)
       } else if (message.type === "rtc_disconnected") {
         setDisconnecting(false);
