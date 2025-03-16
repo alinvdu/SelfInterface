@@ -24,6 +24,9 @@ import Switch from "./components/Switch.js";
 
 import { FiUser } from "react-icons/fi";
 import LoadingDots from "./components/LoadingDots.js";
+import { AiOutlineInfo } from "react-icons/ai";
+
+
 
 const api = "https://selfai.live";
 
@@ -690,25 +693,48 @@ function App() {
       <BackgroundScene isTalking={isTalking} />
       <div style={{
           position: "absolute",
-          top: "10px",
-          left: "10px",
+          top: "16px",
+          left: "16px",
           zIndex: 2,
           background: 'rgba(0, 0, 0, 0.25)',
           "backdrop-filter": "blur(8px)",
           "-webkit-backdrop-filter": "blur(8px)",
           border: "1px solid rgba(255, 255, 255, 0.35)",
           borderRadius: "21px",
-          padding: "0.7rem 2rem",
           color: "white",
           fontSize: "23px",
-          width: 140,
-          height: 35,
+          width: 155,
+          height: 60,
           display: "flex",
           alignItems: "center",
-          justifyContent: "flex-start"
+          justifyContent: "center"
         }}>
           <img style={{ width: 50 }} src="selfai-logo.png" />
-          <span style={{marginLeft: 10}}>Self AI</span>
+          <div style={{marginLeft: 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
+            <div>Self AI</div>
+          </div>
+      </div>
+      <div style={{
+          position: "absolute",
+          bottom: "16px",
+          right: "16px",
+          zIndex: 2,
+          background: 'rgba(0, 0, 0, 0.25)',
+          "backdrop-filter": "blur(8px)",
+          "-webkit-backdrop-filter": "blur(8px)",
+          border: "1px solid rgba(255, 255, 255, 0.35)",
+          borderRadius: "26px",
+          color: "white",
+          fontSize: "23px",
+          width: 100,
+          height: 50,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
+        }}>
+          <div style={{display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
+            <div style={{fontSize: 14}}>v0.1 Beta</div>
+          </div>
       </div>
       <div
         style={{
@@ -718,24 +744,77 @@ function App() {
           transform: "translate(-50%, -50%)",
           zIndex: 2,
           background: 'rgba(0, 0, 0, 0.25)',
-          "backdrop-filter": "blur(8px)",
-          "-webkit-backdrop-filter": "blur(8px)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
           border: "1px solid rgba(255, 255, 255, 0.35)",
           borderRadius: "26px",
           padding: "0.7rem 2rem",
           color: "white",
-          fontSize: "1.2rem"
+          fontSize: "1.2rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
         }}
       >
         Atlas
+        <div 
+          style={{ 
+            position: "relative",
+            marginLeft: "10px",
+            display: "inline-flex",
+            alignItems: "center",
+            cursor: "pointer"
+          }}
+        >
+          <AiOutlineInfo 
+            style={{ 
+              fontSize: 15,
+              borderRadius: "50%",
+              padding: "2px",
+              border: "1px solid rgba(255, 255, 255, 0.65)"
+            }} 
+            onMouseEnter={(e) => {
+              const tooltip = e.currentTarget.nextElementSibling;
+              if (tooltip) tooltip.style.opacity = "1";
+            }}
+            onMouseLeave={(e) => {
+              const tooltip = e.currentTarget.nextElementSibling;
+              if (tooltip) tooltip.style.opacity = "0";
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 15px)",
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "rgba(0, 0, 0, 0.55)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+              color: "white",
+              padding: "8px 12px",
+              borderRadius: "12px",
+              whiteSpace: "nowrap",
+              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+              border: "1px solid rgba(255, 255, 255, 0.2)",
+              opacity: "0",
+              transition: "opacity 0.2s ease-in-out",
+              zIndex: 3,
+              pointerEvents: "none",
+              fontSize: 15
+            }}
+          >
+            Calm and empathetic. Great listener!
+          </div>
+        </div>
       </div>
 
       {!loading &&
       <div
         style={{
           position: "absolute",
-          top: "10px",
-          right: "20px",
+          top: "16px",
+          right: "16px",
           zIndex: 2,
           background: 'rgba(0, 0, 0, 0.25)',
           "backdrop-filter": "blur(15px)",
@@ -752,7 +831,7 @@ function App() {
       <div style={{
         position: "absolute",
         top: isMobile ? "150px" : "100px",
-        left: "10px",
+        left: "16px",
         bottom: isMobile ? "100px" : "20px",
         display: "flex",
         flexDirection: "column",

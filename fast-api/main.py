@@ -209,6 +209,9 @@ class PCM24kAudioTrack(MediaStreamTrack):
         # Otherwise, get new 24kHz frame from source
         frame_24k = await self._frame_queue.get()
 
+        if self.stop_producing:
+            return
+
         # Resample, might return multiple frames
         resampled_frames = self.resampler.resample(frame_24k)
 
@@ -514,65 +517,49 @@ async def websocket_endpoint(websocket: WebSocket):
                         result_dict = result.to_dict()
                         current_transcript = result_dict['channel']['alternatives'][0]['transcript']
                         current_transcript = (current_transcript or "").strip()
-                        # speech_final_flag = result_dict['speech_final']
+                        speech_final_flag = result_dict['speech_final']
+
+                        if current_transcript:
+                            # cancel streaming as soon as a word is detected
+                            if hasattr(session_state, "fill_task"):
+                                session_state.fill_task.cancel()
+                                session_state.current_tts_event = None
+                                session_state.audio_track.clear_queues()
                         
                         if current_transcript and result_dict['is_final']:
                             # handle accumulator
                             session_state.sentence_accumulator.append(current_transcript)
-                            # session_state.speech_final_flag = speech_final_flag
-
-                        # if speech_final_flag and current_transcript:
-                        #     print('Full sentence is: ', current_transcript)
-
-                        #     async def send_user_voice_update(user_text):
-                        #         await websocket.send_json({
-                        #             "type": "user_voice_message",
-                        #             "text": user_text
-                        #         })
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         send_user_voice_update(current_transcript),
-                        #         session_state.loop
-                        #     )
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         process_message(session_state.pc, current_transcript, session_id, user, websocket),
-                        #         session_state.loop
-                        #     )
-
+                            session_state.speech_final_flag = speech_final_flag
                         elif current_transcript:
                             async def send_voice_update():
                                 await websocket.send_json({"type": "voice_message_start"})
                             
                             # Run it in the existing event loop
-                            asyncio.run_coroutine_threadsafe(
+                            ui_update = asyncio.run_coroutine_threadsafe(
                                 send_voice_update(),
                                 session_state.loop
                             )
-                        
-                        # if result_dict['is_final'] and result_dict['speech_final'] and len(sentence.strip()) > 0:
-                        #     full_sentence = sentence.strip()
-                        #     print('Full sentence is: ', full_sentence)
-                        #     async def send_user_voice_update(user_text):
-                        #         await websocket.send_json({
-                        #             "type": "user_voice_message",
-                        #             "text": user_text
-                        #         })
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         send_user_voice_update(full_sentence),
-                        #         session_state.loop
-                        #     )
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         process_message(session_state.pc, full_sentence, session_id, user, websocket),
-                        #         session_state.loop
-                        #     )
-                        # elif len(sentence.strip()) > 0:
-                        #     async def send_voice_update():
-                        #         await websocket.send_json({"type": "voice_message_start"})
-                            
-                        #     # Run it in the existing event loop
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         send_voice_update(),
-                        #         session_state.loop
-                        #     )
+                            ui_update.result()
+
+                        if speech_final_flag and current_transcript:
+                            print('Full sentence is: ', current_transcript)
+
+                            async def send_user_voice_update(user_text):
+                                await websocket.send_json({
+                                    "type": "user_voice_message",
+                                    "text": user_text
+                                })
+                            ui_update = asyncio.run_coroutine_threadsafe(
+                                send_user_voice_update(current_transcript),
+                                session_state.loop
+                            )
+
+                            ui_update.result()
+
+                            asyncio.run_coroutine_threadsafe(
+                                process_message(session_state.pc, current_transcript, session_id, user, websocket),
+                                session_state.loop
+                            )
 
                     def merge_transcripts(transcripts):
                         """
@@ -610,8 +597,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     # Handler for UtteranceEnd events
                     def on_utterance_end(result, **kwargs):
-                        # if not session_state.speech_final_flag and len(session_state.sentence_accumulator):
-                        if len(session_state.sentence_accumulator):
+                        if not session_state.speech_final_flag and len(session_state.sentence_accumulator):
+                        # if len(session_state.sentence_accumulator):
                             full_sentence = merge_transcripts(session_state.sentence_accumulator)
                             print('Utterance end full sentence: ', full_sentence)
 
@@ -620,49 +607,20 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "type": "user_voice_message",
                                     "text": user_text
                                 })
-                            asyncio.run_coroutine_threadsafe(
+                            ui_future = asyncio.run_coroutine_threadsafe(
                                 send_user_voice_update(full_sentence),
                                 session_state.loop
                             )
+
+                            ui_future.result()
+
                             asyncio.run_coroutine_threadsafe(
                                 process_message(session_state.pc, full_sentence, session_id, user, websocket),
                                 session_state.loop
                             )
-                        else:
-                            print('triggered but: ', session_state.speech_final_flag, session_state.sentence_accumulator)
 
-                        # session_state.speech_final_flag=False
+                        session_state.speech_final_flag=False
                         session_state.sentence_accumulator=[]
-
-                        # if session_state.sentence_accumulator:
-                        #     print('got utterence end')
-                        #     # Combine accumulated parts into a single sentence
-                        #     response = client.chat.completions.create(
-                        #         model=model_version_extraction,
-                        #         messages=[
-                        #             {"role": "system", "content": "You are an algorithm that facilitates composing together utterances from speech detection. Please provide back the resulting answer given intermediary utterances, please do not add anything else to the response. Do not respond to question if any, you have to just figure out what the person is saying."},
-                        #             {"role": "user", "content": "\n Intermediate_utterence=".join(session_state.sentence_accumulator)}
-                        #         ]
-                        #     )
-                        #     full_sentence = response.choices[0].message.content
-                        #     print('Full sentence is: ', full_sentence)
-                        #     async def send_user_voice_update(user_text):
-                        #         await websocket.send_json({
-                        #             "type": "user_voice_message",
-                        #             "text": user_text
-                        #         })
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         send_user_voice_update(full_sentence),
-                        #         session_state.loop
-                        #     )
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         process_message(session_state.pc, full_sentence, session_id, user, websocket),
-                        #         session_state.loop
-                        #     )
-                        #     # Reset accumulator for the next utterance
-                        #     session_state.sentence_accumulator = []
-                        # else:
-                        #     print("No sentence accumulated at UtteranceEnd")
 
                     # Register event handlers
                     dg_connection.on(LiveTranscriptionEvents.Transcript, on_transcript)
@@ -677,8 +635,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         sample_rate=48000,
                         channels=2,
                         interim_results=True,
-                        utterance_end_ms="1500",
-                        endpointing=2000
+                        utterance_end_ms="1000",
+                        endpointing=1000
                     )
 
                     if not dg_connection.start(options):
@@ -889,10 +847,6 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
         session_state = SessionState()
         session_states[session_id] = session_state
 
-    if hasattr(session_state, "fill_task"):
-        session_state.fill_task.cancel()
-        session_state.audio_track.clear_queues()
-
     new_tts_event = uuid.uuid4()
     session_state.current_tts_event = new_tts_event
     
@@ -932,6 +886,7 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
     async def fill_audio_queue(audio_track, text, my_event_id):
         loop = asyncio.get_running_loop()
         def blocking_tts_task():
+            print('processing new queue')
             with client.audio.speech.with_streaming_response.create(
                 model="tts-1",
                 voice="onyx",
@@ -940,14 +895,12 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
             ) as response:
                 for chunk in response.iter_bytes():
                     if session_state.current_tts_event != my_event_id:
-                        print("Cancellation detected, stopping TTS stream.")
                         break
                     audio_track.write_pcm(chunk)
 
         try:
             await loop.run_in_executor(executor, blocking_tts_task)
         except asyncio.CancelledError:
-            print("TTS streaming was canceled")
             # Perform additional cleanup if needed
             raise
 
