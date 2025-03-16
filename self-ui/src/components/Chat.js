@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { GoArrowUp } from "react-icons/go";
+import { IoIosSend } from "react-icons/io";
 import LoadingDiv from "./LoadingDiv";
 import { BsThreeDots } from "react-icons/bs";
 
@@ -287,7 +287,7 @@ const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage }) =
             transition: "background-color 0.2s"
           }}
         >
-          <GoArrowUp size={22} />
+          <IoIosSend size={20} />
         </button>
       </div>
     </div>
