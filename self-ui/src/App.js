@@ -254,6 +254,13 @@ function App() {
   const [loadingPreferences, setLoadingPreferences] = useState(true);
   const [userVoiceMessage, setUserVoiceMessage] = useState(null);
   const [assistantMessage, setAssistantVoiceMessage] = useState(null);
+  const [latestMessageType, setLatestMessageType] = useState(null);
+
+  const [userMessageKey, setUserMessageKey] = useState(0);
+  const [assistantMessageKey, setAssistantMessageKey] = useState(0);
+
+  const prevUserMessageRef = useRef(null);
+  const prevAssistantMessageRef = useRef(null);
 
   const processPhoneCallEvents = (messages) => {
     const processed = [];
@@ -434,12 +441,29 @@ function App() {
         }])
         convDetails.current = null 
       } else if (message.type === "user_voice_message") {
-        setUserVoiceMessage(message.text)
-        setAssistantVoiceMessage(null)
+        // Check if the message is actually new by comparing with the ref
+        if (message.text !== prevUserMessageRef.current) {
+          setUserMessageKey(prev => prev + 1);
+          prevUserMessageRef.current = message.text;
+        }
+        setUserVoiceMessage(message.text);
+        setLatestMessageType('user');
       } else if (message.type === "assistant_voice_message") {
-        setAssistantVoiceMessage(message.text)
+        // Check if the message is actually new by comparing with the ref
+        if (message.text !== prevAssistantMessageRef.current) {
+          setAssistantMessageKey(prev => prev + 1);
+          prevAssistantMessageRef.current = message.text;
+        }
+        setAssistantVoiceMessage(message.text);
+        setLatestMessageType('assistant');
       } else if (message.type === "voice_message_start") {
-        setUserVoiceMessage("...")
+        // Check if "..." is actually new
+        if ("..." !== prevUserMessageRef.current) {
+          setUserMessageKey(prev => prev + 1);
+          prevUserMessageRef.current = "...";
+        }
+        setUserVoiceMessage("...");
+        setLatestMessageType('user');
       }
     };
 
@@ -699,6 +723,85 @@ function App() {
         </div>
     )
   }
+
+  const renderUserMessage = (key) => (
+    <div style={{
+      display: "flex",
+      maxWidth: "75%",
+      alignSelf: "flex-start",
+      marginTop: 10
+    }}
+    key={`user-${key}`}
+    className="userSlideIn"
+    >
+      <div style={{
+        display: 'flex',
+        alignItems: "center",
+        justifyContent: "center",
+        width: 40,
+        height: 40,
+        borderRadius: "50%",
+        border: "1px solid white",
+        marginRight: 8,
+        backgroundColor: 'rgba(0, 0, 0, 0.25)',
+        color: 'white',
+        border: '1px solid rgba(255, 255, 255, 0.4)',
+        "backdrop-filter": "blur(8px)",
+        "-webkit-backdrop-filter": "blur(8px)",
+      }}>
+        <FiUser fontSize={21} style={{marginTop: -1}} />
+      </div>
+      <div style={{
+        backgroundColor: 'rgba(0, 0, 0, 0.25)',
+        color: 'white',
+        border: '1px solid rgba(255, 255, 255, 0.4)',
+        "backdrop-filter": "blur(8px)",
+        "-webkit-backdrop-filter": "blur(8px)",
+        padding: "6px 8px",
+        borderRadius: 8,
+        maxWidth: "70%"
+      }}
+      title={userVoiceMessage}
+      >
+        {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > 700 ? userVoiceMessage.substring(0, 700) + '...' : userVoiceMessage}
+      </div>
+    </div>
+  );
+  
+  // Function to render assistant message
+  const renderAssistantMessage = (key) => (
+    <div style={{
+      display: "flex",
+      maxWidth: "75%",
+      alignSelf: "flex-end",
+      marginTop: 10
+    }}
+    key={`assistant-${key}`}
+    className="assistantSlideIn"
+    >
+      <div style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.35)',
+        border: '1px solid rgba(255, 255, 255, 0.3)',
+        "backdrop-filter": "blur(8px)",
+        "-webkit-backdrop-filter": "blur(8px)",
+        padding: "6px 8px",
+        borderRadius: 8,
+        flex: 1,
+        color: "rgba(0, 0, 0, 0.65)"
+      }}
+      title={assistantMessage}
+      >
+        {assistantMessage.length > 700 ? assistantMessage.substring(0, 700) + '...' : assistantMessage}
+      </div>
+      <img style={{
+        width: 40,
+        height: 40,
+        borderRadius: "50%",
+        border: "1px solid white",
+        marginLeft: 8
+      }} src={`${process.env.PUBLIC_URL}/assets/atlas-avatar.png`} />
+    </div>
+  );
 
   return (
     <div
@@ -965,90 +1068,41 @@ function App() {
           </CollapsibleMemoriesPanel>
       </div>
       {conversing &&
-      <div style={{
-        position: "absolute",
-        bottom: "140px",
-        right: "50%",
-        display: "flex",
-        transform: "translateX(50%)",
-        display: "flex",
-        flexDirection: "column",
-        minWidth: isMobile ? 350 : 450,
-        maxWidth: isMobile ? 350 : 700
-      }}>
-        {assistantMessage && 
         <div style={{
+          position: "absolute",
+          bottom: "140px",
+          right: "50%",
           display: "flex",
-          maxWidth: "75%",
-          alignSelf: "flex-end"
-        }}
-        className="assistantSlideIn"
-        >
-          <div style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.35)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            "backdrop-filter": "blur(8px)",
-            "-webkit-backdrop-filter": "blur(8px)",
-            padding: "6px 8px",
-            borderRadius: 8,
-            flex: 1,
-            color: "rgba(0, 0, 0, 0.65)"
-          }}
-          title={assistantMessage}
-          >
-            {assistantMessage.length > 700 ? assistantMessage.substring(0, 700) + '...' : assistantMessage}
-          </div>
-          <img style={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            border: "1px solid white",
-            marginLeft: 8
-          }} src={`${process.env.PUBLIC_URL}/assets/atlas-avatar.png`} />
+          transform: "translateX(50%)",
+          display: "flex",
+          flexDirection: "column",
+          minWidth: isMobile ? 350 : 450,
+          maxWidth: isMobile ? 350 : 700
+        }}>
+          {/* Render messages in the correct order based on which was received last */}
+          {userVoiceMessage && assistantMessage ? (
+            // Both messages exist
+            latestMessageType === 'assistant' ? (
+              // Assistant was the last to speak
+              <>
+                {renderUserMessage(userMessageKey)}
+                {renderAssistantMessage(assistantMessageKey)}
+              </>
+            ) : (
+              // User was the last to speak
+              <>
+                {renderAssistantMessage(assistantMessageKey)}
+                {renderUserMessage(userMessageKey)}
+              </>
+            )
+          ) : (
+            // Only one message exists
+            <>
+              {assistantMessage && renderAssistantMessage(assistantMessageKey)}
+              {userVoiceMessage && renderUserMessage(userMessageKey)}
+            </>
+          )}
         </div>}
-       {userVoiceMessage &&
-       <div style={{
-        display: "flex",
-        maxWidth: "75%",
-        alignSelf: "flex-start",
-        marginTop: 10
-      }}
-      key={userVoiceMessage}
-      className="userSlideIn"
-      >
-        <div style={{
-            display: 'flex',
-            alignItems: "center",
-            justifyContent: "center",
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            border: "1px solid white",
-            marginRight: 8,
-            backgroundColor: 'rgba(0, 0, 0, 0.25)',
-            color: 'white',
-            border: '1px solid rgba(255, 255, 255, 0.4)',
-            "backdrop-filter": "blur(8px)",
-            "-webkit-backdrop-filter": "blur(8px)",
-          }}>
-            <FiUser fontSize={21} style={{marginTop: -1}} />
-          </div>
-        <div style={{
-            backgroundColor: 'rgba(0, 0, 0, 0.25)',
-            color: 'white',
-            border: '1px solid rgba(255, 255, 255, 0.4)',
-            "backdrop-filter": "blur(8px)",
-            "-webkit-backdrop-filter": "blur(8px)",
-            padding: "6px 8px",
-            borderRadius: 8,
-            maxWidth: "70%"
-          }}
-          title={userVoiceMessage}
-          >
-          {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > 700 ? userVoiceMessage.substring(0, 700) + '...' : userVoiceMessage}
-          </div>
-        </div>}
-      </div>}
       <div style={{
         position: "absolute",
         bottom: isMobile ? "20px" : "50px",

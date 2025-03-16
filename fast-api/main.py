@@ -24,6 +24,9 @@ import logging
 import random
 import copy
 
+from aiortc.mediastreams import MediaStreamError
+from starlette.websockets import WebSocketDisconnect
+
 # Configure logging
 # logging.basicConfig(
 #     level=logging.DEBUG,  # Set to DEBUG to capture all levels
@@ -669,16 +672,23 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Asynchronously receive audio frames from the track and put them into the queue.
                     try:
                         while True:
-                            frame = await track.recv()
-                            if frame is None:
-                                logging.info("Session %s: No more frames; ending audio capture", session_id)
+                            try:
+                                frame = await track.recv()
+                                if frame is None:
+                                    logging.info("Session %s: No more frames; ending audio capture", session_id)
+                                    break
+                                audio_data = frame.to_ndarray()
+                                # Basic energy-based silence detection
+                                audio_queue.put(audio_data.tobytes())
+                            except MediaStreamError:
+                                # This is expected when client disconnects
+                                logging.info("Session %s: Client disconnected (MediaStreamError)", session_id)
                                 break
-                            audio_data = frame.to_ndarray()
-                            # Basic energy-based silence detection
-                            audio_queue.put(audio_data.tobytes())
-                    except Exception as e:
-                        logging.error("Session %s: Error reading audio track: %s\n%s", 
-                                    session_id, e, traceback.format_exc())
+                            except Exception as e:
+                                # This catches other unexpected errors
+                                logging.error("Session %s: Error reading audio track: %s\n%s", 
+                                            session_id, e, traceback.format_exc())
+                                break
                     finally:
                         # Signal the sender thread to finish and wait for it to join.
                         audio_queue.put(None)
@@ -801,6 +811,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     "message": "WebRTC connection closed"
                 })
 
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected normally for session {session_id}")
     except Exception as e:
         import traceback
         error_type = type(e).__name__
@@ -885,7 +897,6 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
     async def fill_audio_queue(audio_track, text, my_event_id):
         loop = asyncio.get_running_loop()
         def blocking_tts_task():
-            print('processing new queue')
             with client.audio.speech.with_streaming_response.create(
                 model="tts-1",
                 voice="onyx",
@@ -974,6 +985,7 @@ async def finalize_conversation(
     user: dict = None
 ):
     print('calling finalize conv')
+    namespace = "user-memories"
     filtered_messages = []
     for msg in conversation:
         if msg["role"] == "system":
@@ -1053,7 +1065,6 @@ async def finalize_conversation(
             return
         
         new_records = []
-        namespace = "user-memories"
         DUPLICATE_THRESHOLD = 0.85
 
         for insight in extracted_insights:
