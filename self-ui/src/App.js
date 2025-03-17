@@ -750,6 +750,8 @@ function App() {
     )
   }
 
+  const CHAT_CHAR_DISPLAY = isMobile ? 150 : 700
+
   const renderUserMessage = (key) => (
     <div style={{
       display: "flex",
@@ -789,7 +791,7 @@ function App() {
       }}
       title={userVoiceMessage}
       >
-        {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > 700 ? userVoiceMessage.substring(0, 700) + '...' : userVoiceMessage}
+        {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > CHAT_CHAR_DISPLAY ? userVoiceMessage.substring(0, CHAT_CHAR_DISPLAY) + '...' : userVoiceMessage}
       </div>
     </div>
   );
@@ -817,7 +819,7 @@ function App() {
       }}
       title={assistantMessage}
       >
-        {assistantMessage.length > 700 ? assistantMessage.substring(0, 700) + '...' : assistantMessage}
+        {assistantMessage.length > CHAT_CHAR_DISPLAY ? assistantMessage.substring(0, CHAT_CHAR_DISPLAY) + '...' : assistantMessage}
       </div>
       <img style={{
         width: 40,
@@ -862,7 +864,7 @@ function App() {
             <div>Self AI</div>
           </div>
       </div>
-      <div style={{
+      {!isMobile && <div style={{
           position: "absolute",
           bottom: "16px",
           right: "16px",
@@ -883,7 +885,7 @@ function App() {
           <div style={{display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
             <div style={{fontSize: 14}}>v0.1 Beta</div>
           </div>
-      </div>
+      </div>}
       <div
         style={{
           position: "absolute",
