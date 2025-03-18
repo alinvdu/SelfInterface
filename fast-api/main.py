@@ -254,7 +254,7 @@ from concurrent.futures import ThreadPoolExecutor
 model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
 model_version_extraction = "gpt-4o-mini"
 
-executor = ThreadPoolExecutor(max_workers=4)
+executor = ThreadPoolExecutor(max_workers=16)
 
 # Initialize Firebase Admin with your service account key.
 import base64
@@ -778,8 +778,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     memory_enabled = get_memory_enabled(user['uid'])
 
                     if memory_enabled:
-                        asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
-                
+                        loop = asyncio.get_running_loop()
+                        loop.run_in_executor(
+                            executor, 
+                            lambda: asyncio.run(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user['uid']))
+                        )
+
                 # Close the peer connection if it exists
                 if session_id in peer_connections:
                     pc = peer_connections[session_id]
@@ -841,12 +845,19 @@ async def websocket_endpoint(websocket: WebSocket):
         
         if session_id in conversation_histories and len(conversation_histories[session_id]) > 3 and memory_enabled:
             print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for conversation")
-            asyncio.create_task(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user))
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(
+                executor, 
+                lambda: asyncio.run(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user['uid']))
+            )
 
         if session_id in chat_histories and len(chat_histories[session_id]) > 3 and memory_enabled:
             print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for chat")
-            asyncio.create_task(finalize_conversation(copy.deepcopy(chat_histories[session_id]), user))
-            
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(
+                executor,
+                lambda: asyncio.run(finalize_conversation(copy.deepcopy(chat_histories[session_id]), user['uid']))
+            )
         
     # except Exception as e:
     #     logger.error(f"WebSocket error in session {session_id}: {str(e)}", exc_info=True)
@@ -990,7 +1001,7 @@ def extract_json_from_markdown(text):
 
 async def finalize_conversation(
     conversation,
-    user: dict = None
+    userId
 ):
     print('calling finalize conv')
     namespace = "user-memories"
@@ -1086,7 +1097,7 @@ async def finalize_conversation(
                 "_id": record_id,
                 "chunk_text": text,
                 "text": encrypt_text(text),
-                "user_id": user["uid"],
+                "user_id": userId,
                 "timestamp": datetime.utcnow().isoformat(),
                 "category": category,
                 "tags": [category],
@@ -1098,7 +1109,7 @@ async def finalize_conversation(
                 query={
                     "inputs": {"text": text},
                     "top_k": 1,
-                    "filter": {"category": {"$eq": category}, "user_id": {"$eq": user["uid"]}}
+                    "filter": {"category": {"$eq": category}, "user_id": {"$eq": userId}}
                 },
                 fields=["text", "category", "score"]
             )
@@ -1137,7 +1148,7 @@ async def finalize_conversation(
             "_id": str(uuid.uuid4()),
             "chunk_text": summary_text,
             "text": encrypt_text(summary_text),
-            "user_id": user["uid"],
+            "user_id": userId,
             "timestamp": datetime.utcnow().isoformat(),
             "category": "conversation_summary",
             "tags": ["summary"],
