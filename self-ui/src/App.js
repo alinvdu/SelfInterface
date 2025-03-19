@@ -9,8 +9,6 @@ import { OrbitControls } from "@react-three/drei";
 
 import { HiOutlinePhone, HiOutlinePhoneXMark } from "react-icons/hi2";
 import { RiVoiceprintFill } from "react-icons/ri";
-
-import { BiUserVoice } from "react-icons/bi";
 import { LuBrainCog } from "react-icons/lu";
 
 import Model from "./Model.js";
@@ -24,11 +22,25 @@ import Switch from "./components/Switch.js";
 
 import { FiUser } from "react-icons/fi";
 import LoadingDots from "./components/LoadingDots.js";
-import { AiOutlineInfo } from "react-icons/ai";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
 const api = "https://selfai.live";
+
+const AVAILABLE_MODELS = [
+  {
+    id: "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe",
+    name: "Atlas",
+    description: "Calm, empathetic and attentive. Great for a psychologist."
+  },
+  {
+    id: "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf",
+    name: "Unfiltered Friend",
+    description: "Empathetic, truthful and funny. Might say the wrong thing!"
+  }
+];
+
+const DEFAULT_MODEL = AVAILABLE_MODELS[0];
 
 // --- Background Scene Component ---
 function BackgroundScene({ isTalking }) {
@@ -258,6 +270,51 @@ function App() {
 
   const [userMessageKey, setUserMessageKey] = useState(0);
   const [assistantMessageKey, setAssistantMessageKey] = useState(0);
+
+  const modelDropdownRef = useRef(null);
+
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const savedModel = localStorage.getItem("selectedModel");
+    if (savedModel) {
+      try {
+        return JSON.parse(savedModel);
+      } catch (e) {
+        return DEFAULT_MODEL;
+      }
+    }
+    return DEFAULT_MODEL;
+  });
+
+    // Add this with your other useEffect hooks
+  useEffect(() => {
+    // Function to handle clicks outside the dropdown
+    function handleClickOutside(event) {
+      if (modelDropdownRef.current && 
+          !modelDropdownRef.current.contains(event.target) && 
+          isModelDropdownOpen) {
+        setIsModelDropdownOpen(false);
+      }
+    }
+    
+    // Add event listener when dropdown is open
+    if (isModelDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    
+    // Clean up the event listener
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isModelDropdownOpen]); // Re-run effect when dropdown state changes
+  
+  const handleModelSelect = (model) => {
+    setSelectedModel(model);
+    localStorage.setItem("selectedModel", JSON.stringify(model));
+    setIsModelDropdownOpen(false);
+
+    window.location.reload();
+  };
 
   const prevUserMessageRef = useRef(null);
   const prevAssistantMessageRef = useRef(null);
@@ -517,7 +574,7 @@ function App() {
         if (!sessionId) {
           try {
             // Start the new session API call
-          const newSessionPromise = fetch(api + "/new_session", {
+          const newSessionPromise = fetch(api + `/new_session?model_version=${encodeURIComponent(selectedModel.id)}`, {
             headers: { Authorization: `Bearer ${token}` },
           }).then(res => res.json());
 
@@ -887,76 +944,168 @@ function App() {
           </div>
       </div>}
       <div
+        ref={modelDropdownRef}
         style={{
           position: "absolute",
-          top: "110px",
-          left: "53%",
-          transform: "translate(-50%, -50%)",
+          top: isMobile ? "82px" : "115px",
+          left: "50%",
+          transform: !isMobile ? "translate(-50%, -35%)" : "translateX(-50%)",
           zIndex: 2,
           background: 'rgba(0, 0, 0, 0.25)',
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
           border: "1px solid rgba(255, 255, 255, 0.35)",
           borderRadius: "26px",
-          padding: "0.7rem 2rem",
+          padding: isModelDropdownOpen ? "0.8rem" : "0.5rem 1.2rem",
           color: "white",
           fontSize: "1.2rem",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center"
+          justifyContent: "center",
+          cursor: "pointer",
+          transition: "all 0.3s ease-in-out",
+          height: isModelDropdownOpen ? "auto" : "48px",
+          flexDirection: isModelDropdownOpen ? "column" : "row",
+          overflow: "hidden",
+          maxHeight: isMobile && isModelDropdownOpen ? "calc(100vh - 200px)" : "none",
+          width: isMobile && isModelDropdownOpen ? "80%" : "auto",
+          zIndex: 99
         }}
+        onClick={() => !isModelDropdownOpen && setIsModelDropdownOpen(true)}
       >
-        Atlas
-        <div 
-          style={{ 
-            position: "relative",
-            marginLeft: "10px",
-            display: "inline-flex",
-            alignItems: "center",
-            cursor: "pointer"
-          }}
-        >
-          <AiOutlineInfo 
-            style={{ 
-              fontSize: 15,
-              borderRadius: "50%",
-              padding: "2px",
-              border: "1px solid rgba(255, 255, 255, 0.65)"
-            }} 
-            onMouseEnter={(e) => {
-              const tooltip = e.currentTarget.nextElementSibling;
-              if (tooltip) tooltip.style.opacity = "1";
-            }}
-            onMouseLeave={(e) => {
-              const tooltip = e.currentTarget.nextElementSibling;
-              if (tooltip) tooltip.style.opacity = "0";
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              top: "calc(100% + 15px)",
-              left: "50%",
-              transform: "translateX(-50%)",
-              background: "rgba(0, 0, 0, 0.55)",
-              backdropFilter: "blur(10px)",
-              WebkitBackdropFilter: "blur(10px)",
-              color: "white",
-              padding: "8px 12px",
-              borderRadius: "12px",
-              whiteSpace: "nowrap",
-              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-              border: "1px solid rgba(255, 255, 255, 0.2)",
-              opacity: "0",
-              transition: "opacity 0.2s ease-in-out",
-              zIndex: 3,
-              pointerEvents: "none",
-              fontSize: 15
-            }}
-          >
-            Calm, empathetic. Great listener!
-          </div>
-        </div>
+        {!isModelDropdownOpen ? (
+          <>
+            {selectedModel.name}
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              width="16" 
+              height="16" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              style={{ 
+                marginLeft: "8px",
+                transition: "transform 0.2s ease",
+              }}
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </>
+        ) : (
+          <>
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between", 
+              width: "100%", 
+              marginBottom: "10px",
+              alignItems: "center"
+            }}>
+              <div style={{ fontSize: "1rem", fontWeight: "bold" }}>Model Selection</div>
+              <div 
+                style={{ 
+                  cursor: "pointer", 
+                  fontSize: 18, 
+                  width: 24, 
+                  height: 24, 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "center",
+                  borderRadius: "50%",
+                  background: "rgba(255, 255, 255, 0.1)",
+                  transition: "background-color 0.2s ease"
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsModelDropdownOpen(false);
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.2)"}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)"}
+              >
+                ×
+              </div>
+            </div>
+            <div style={{ maxHeight: "190px", overflowY: "auto", width: "100%" }}>
+              {AVAILABLE_MODELS.map((model) => (
+                <div
+                  key={model.id}
+                  style={{
+                    padding: "8px 10px",
+                    margin: "3px 0",
+                    borderRadius: "10px",
+                    background: selectedModel.id === model.id ? "rgba(255, 255, 255, 0.95)" : "rgba(0, 0, 0, 0.2)",
+                    border: selectedModel.id === model.id 
+                      ? "1px solid rgba(255, 255, 255, 0.95)" 
+                      : "1px solid rgba(255, 255, 255, 0.3)",
+                    color: selectedModel.id === model.id ? "rgba(0, 0, 0, 0.8)" : "white",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    display: "flex",
+                    flexDirection: "column",
+                    position: "relative",
+                    alignItems: "flex-start",
+                    boxShadow: selectedModel.id === model.id ? "0 2px 8px rgba(0, 0, 0, 0.1)" : "none",
+                    marginBottom: 8
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleModelSelect(model);
+                  }}
+                  onMouseOver={(e) => {
+                    if (selectedModel.id !== model.id) {
+                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.5)";
+                      e.currentTarget.style.background = "rgba(0, 0, 0, 0.3)";
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (selectedModel.id !== model.id) {
+                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)";
+                      e.currentTarget.style.background = "rgba(0, 0, 0, 0.2)";
+                    }
+                  }}
+                >
+                  <div style={{ 
+                    fontWeight: "500", 
+                    display: "flex", 
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    fontSize: 16
+                  }}>
+                    {model.name}
+                    {selectedModel.id === model.id && (
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        width="16" 
+                        height="16" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                        style={{ color: "rgba(0, 0, 0, 0.7)" }}
+                      >
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    )}
+                  </div>
+                  <div style={{ 
+                    fontSize: "0.9rem", 
+                    opacity: selectedModel.id === model.id ? 0.8 : 0.9,
+                    maxWidth: 300,
+                    paddingRight: 15,
+                    textAlign: "left"
+                  }}>
+                    {model.description}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {!loading &&

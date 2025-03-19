@@ -251,7 +251,7 @@ load_dotenv()
 
 from concurrent.futures import ThreadPoolExecutor
 
-model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+model_version = "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf"
 model_version_extraction = "gpt-4o-mini"
 
 executor = ThreadPoolExecutor(max_workers=16)
@@ -407,13 +407,14 @@ from aiortc import RTCConfiguration, RTCIceServer
 # Store session states globally
 session_states = {}
 class SessionState:
-    def __init__(self):
+    def __init__(self, model_version):
         self.transcription = ""  # Accumulated transcription
         self.language = None    # Detected language
         self.pc = None          # Peer connection
         self.audio_task = None  # Audio processing task
         self.sentence_accumulator = []
         self.speech_final_flag = False
+        self.model_version = model_version
 
 import logging
 import traceback
@@ -492,7 +493,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Initialize the peer connection
                 pc = RTCPeerConnection(configuration=config)
                 peer_connections[session_id] = pc
-                session_states[session_id] = SessionState()
                 session_states[session_id].pc = pc
                 session_state = session_states.get(session_id)
                 session_state.loop = asyncio.get_running_loop()
@@ -1157,7 +1157,7 @@ async def finalize_conversation(
         pinecone_index.upsert_records(namespace, [record_summary])
 
 @app.get("/new_session")
-async def new_session():
+async def new_session(model_version: str = Query("ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe")):
     session_id = str(uuid.uuid4())
     conversation_histories[session_id] = [
         {"role": "system", "content": SYSTEM_PROMPT}
@@ -1165,6 +1165,9 @@ async def new_session():
     chat_histories[session_id] = [
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
+    
+    session_states[session_id] = SessionState(model_version=model_version)
+
     print('chat histories keys in new_session is: ', chat_histories.keys())
     return {"session_id": session_id}
 
@@ -1382,7 +1385,6 @@ async def process_message(
         history = chat_histories[session_id]
     else:
         history = conversation_histories[session_id]
-
     if user:
         # Check if memory is enabled
         memory_enabled = get_memory_enabled(user.get("uid"))
@@ -1418,8 +1420,10 @@ async def process_message(
                 history.append({"role": "system", "content": retrieved_memories_text})
 
     history.append({"role": "user", "content": user_text})
+    session_state = session_states.get(session_id)
+    model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
     chat_response = client.chat.completions.create(
-        model=model_version,
+        model=model_ver,
         messages=history
     )
     assistant_text = chat_response.choices[0].message.content
