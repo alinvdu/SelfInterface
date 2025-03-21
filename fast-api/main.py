@@ -1093,10 +1093,11 @@ async def finalize_conversation(
                 continue
 
             record_id = str(uuid.uuid4())
+            encrypted_text = encrypt_text(text)
             record = {
                 "_id": record_id,
                 "chunk_text": text,
-                "text": encrypt_text(text),
+                "text": encrypted_text,
                 "user_id": userId,
                 "timestamp": datetime.utcnow().isoformat(),
                 "category": category,
@@ -1108,18 +1109,29 @@ async def finalize_conversation(
                 namespace=namespace,
                 query={
                     "inputs": {"text": text},
-                    "top_k": 1,
+                    "top_k": 5,  # Increased to find up to 5 potential matches
                     "filter": {"category": {"$eq": category}, "user_id": {"$eq": userId}}
                 },
-                fields=["text", "category", "score"]
+                fields=["text", "category", "score", "is_encrypted"]
             )
 
             duplicate_found = False
             hits = search_results.get("result", {}).get("hits", [])
-            if hits and len(hits) > 0:
-                similarity_score = hits[0].get("score", 0)
+            
+            # Check all hits, not just the first one
+            for hit in hits:
+                similarity_score = hit.get("score", 0)
+                fields = hit.get("fields", {})
+                
+                # Decrypt the stored text for comparison if it's encrypted
+                stored_text = fields.get("text", "")                if fields.get("is_encrypted", False):
+                    stored_text = decrypt_text(stored_text)
+                    
+                # Now compare with the original, unencrypted text
                 if similarity_score >= DUPLICATE_THRESHOLD:
                     duplicate_found = True
+                    print(f"Duplicate memory found for category {category} with similarity {similarity_score}: skipping record.")
+                    break  # Exit the loop once a duplicate is found
 
             if not duplicate_found:
                 new_records.append(record)
@@ -1397,7 +1409,7 @@ async def process_message(
                     "top_k": 5,
                     "filter": {"user_id": {"$eq": user["uid"]}}
                 },
-                fields=["text"]
+                fields=["text", "is_encrypted"]
             )
             memories = []
             result = results.get("result", {})
