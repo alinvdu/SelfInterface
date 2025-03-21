@@ -1124,7 +1124,8 @@ async def finalize_conversation(
                 fields = hit.get("fields", {})
                 
                 # Decrypt the stored text for comparison if it's encrypted
-                stored_text = fields.get("text", "")                if fields.get("is_encrypted", False):
+                stored_text = fields.get("text", "")
+                if fields.get("is_encrypted", False):
                     stored_text = decrypt_text(stored_text)
                     
                 # Now compare with the original, unencrypted text
