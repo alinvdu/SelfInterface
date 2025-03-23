@@ -6,9 +6,7 @@ import logging
 import numpy as np
 import time
 import websockets
-from io import BytesIO
-from PIL import Image
-import uuid
+import io
 
 class HumeWebSocketHandler:
     def __init__(self, api_key, session_id):
