@@ -10,7 +10,7 @@ const LoginButton = ({ isMobile }) => {
         <div>
           {!isMobile && <span>Welcome, {user.displayName}!</span>}
           <button style={{
-            marginLeft: 10,
+            marginLeft: isMobile ? 0 : 10,
             padding: "5px 15px",
             borderRadius: 26,
             background: 'rgba(255, 255, 255, 0.95)',
@@ -23,7 +23,7 @@ const LoginButton = ({ isMobile }) => {
         <div>
           {!isMobile && <span>Sign in to access more features!</span>}
           <button style={{
-            marginLeft: 10,
+            marginLeft: isMobile ? 0 : 10,
             padding: "5px 15px",
             borderRadius: 26,
             background: 'rgba(255, 255, 255, 0.95)',

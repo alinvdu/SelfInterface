@@ -84,11 +84,19 @@ function App() {
   const convDetails = useRef(null);
 
   // Initialize WebRTC connection
-  const initiateWebRTC = async () => {
+  const initiateWebRTC = async (withCamera = false) => {
     try {
       const localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
+        video: withCamera
       });
+
+      if (withCamera) {
+        const videoElement = document.getElementById('user-video');
+        if (videoElement) {
+          videoElement.srcObject = localStream;
+        }
+      }
 
       peerConnectionRef.current = new RTCPeerConnection({
         // iceTransportPolicy: "relay",
@@ -110,8 +118,49 @@ function App() {
         peerConnectionRef.current.addTrack(track, localStream);
       });
 
+      function removeRtxCodecs(sdp) {
+        const lines = sdp.split('\r\n');
+        const rtxPayloadTypes = [];
+    
+        // First, identify all RTX payload types
+        lines.forEach(line => {
+            if (line.includes('a=rtpmap') && line.includes('rtx/')) {
+                const match = line.match(/a=rtpmap:(\d+) rtx\/\d+/);
+                if (match && match[1]) {
+                    rtxPayloadTypes.push(match[1]);
+                }
+            }
+        });
+    
+        const filteredLines = lines.filter(line => {
+            // Remove RTX related lines
+            for (let payloadType of rtxPayloadTypes) {
+                if (line.startsWith(`a=rtpmap:${payloadType}`) ||
+                    line.startsWith(`a=fmtp:${payloadType}`) ||
+                    line.startsWith(`a=rtcp-fb:${payloadType}`)) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    
+        // Now, remove RTX payload types from the m=video line
+        const finalLines = filteredLines.map(line => {
+            if (line.startsWith('m=video')) {
+                const parts = line.split(' ');
+                const mLine = parts.slice(0, 3); // "m=video", port, protocol
+                const payloads = parts.slice(3).filter(pt => !rtxPayloadTypes.includes(pt));
+                return [...mLine, ...payloads].join(' ');
+            }
+            return line;
+        });
+    
+        return finalLines.join('\r\n');
+    }
+
       peerConnectionRef.current.addTransceiver('audio', { direction: 'recvonly' });
       const offer = await peerConnectionRef.current.createOffer();
+      offer.sdp = removeRtxCodecs(offer.sdp);
       await peerConnectionRef.current.setLocalDescription(offer);
 
       wsRef.current.send(
@@ -256,6 +305,7 @@ function App() {
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
+  const isSmallSize = windowWidth < 1200;
   const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
   const [isMemoryExpanded, toggleMemoryExpanded] = useState(false)
 
@@ -270,6 +320,9 @@ function App() {
 
   const [userMessageKey, setUserMessageKey] = useState(0);
   const [assistantMessageKey, setAssistantMessageKey] = useState(0);
+  const [isCallDropdownVisible, setIsCallDropdownVisible] = useState(false);
+  const callDropdownRef = useRef(null);
+  const [showVideo, setShowVideo] = useState(false);
 
   const modelDropdownRef = useRef(null);
 
@@ -307,6 +360,49 @@ function App() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isModelDropdownOpen]); // Re-run effect when dropdown state changes
+
+  useEffect(() => {
+    // Function to handle clicks outside the dropdown
+    function handleClickOutside(event) {
+      if (modelDropdownRef.current && 
+          !modelDropdownRef.current.contains(event.target) && 
+          isModelDropdownOpen) {
+        setIsModelDropdownOpen(false);
+      }
+    }
+    
+    // Add event listener when dropdown is open
+    if (isModelDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    
+    // Clean up the event listener
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isModelDropdownOpen]); // Re-run effect when dropdown state changes
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Only close if dropdown is open and click is outside dropdown and button
+      if (isCallDropdownVisible && 
+          callDropdownRef.current && 
+          !callDropdownRef.current.contains(event.target) &&
+          !event.target.closest('.lets-connect-button')) {
+        setIsCallDropdownVisible(false);
+      }
+    };
+    
+    // Add event listener when dropdown is open
+    if (isCallDropdownVisible) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    // Clean up
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isCallDropdownVisible]);
   
   const handleModelSelect = (model) => {
     setSelectedModel(model);
@@ -640,6 +736,8 @@ function App() {
 
   const handleDisconnect = async () => {
     if (!sessionId) return;
+
+    setShowVideo(false);
     
     setDisconnecting(true);
     
@@ -744,20 +842,22 @@ function App() {
     if (!isWsOpen) {
       return null
     }
-
+  
     if (!conversing) {
       return (
-        <div style={{
+        <div 
+          className="lets-connect-button"
+          style={{
           display: 'flex',
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'pointer',
-          padding: 12
-        }} onClick={() => {
-          toggleExpandChat(false)
-          setPhoneCalling(true)
-          initiateWebRTC()
+          padding: isMobile ? 6 : 12,
+          position: 'relative' // Added for dropdown positioning
+        }} onClick={(e) => {
+          e.stopPropagation(); // Prevent body click from closing it immediately
+          setIsCallDropdownVisible(true); // Show dropdown instead of dialog
         }}>
           <LoadingDiv
             isLoading={calling} 
@@ -773,7 +873,97 @@ function App() {
           >
             <HiOutlinePhone style={{ fontSize: 21 }} />
           </LoadingDiv>
-          <div style={{ marginLeft: "1rem", marginRight: "0.5rem", fontSize: "18px" }}>{calling ? "Calling Atlas..." : "Let's Talk"}</div>
+          <div style={{ marginLeft: isMobile ? 7 : "1rem", marginRight: "0.5rem", fontSize: isMobile ? "15px" : "18px" }}>{calling ? "Calling Atlas..." : "Let's Connect"}</div>
+          
+          {/* Call Options Dropdown */}
+          {isCallDropdownVisible && (
+            <div 
+              ref={callDropdownRef}
+              className="callOptionsDropdown"
+              onClick={(e) => e.stopPropagation()} // Prevent clicks from reaching document
+              style={{
+                position: 'absolute',
+                bottom: '100%',
+                marginBottom: '12px',
+                width: '280px',
+                background: 'rgba(0, 0, 0, 0.25)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255, 255, 255, 0.4)',
+                borderRadius: '16px',
+                padding: '12px',
+                zIndex: 10,
+                animation: 'fadeInUp 0.3s ease-out forwards', // Animation
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
+              }}
+            >
+              {/* Audio Call Option */}
+              <div 
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  marginBottom: '8px',
+                  cursor: 'pointer',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent triggering parent onClick
+                  setIsCallDropdownVisible(false);
+                  toggleExpandChat(false);
+                  setPhoneCalling(true);
+                  initiateWebRTC(false); // Audio call
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                }}
+              >
+                <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '16px' }}>Audio Call</div>
+                <div style={{ fontSize: '14px', opacity: 0.85 }}>Real time voice sentiment emotion recognition</div>
+              </div>
+              
+              {/* Video Call Option */}
+              <div 
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent triggering parent onClick
+                  setIsCallDropdownVisible(false);
+                  toggleExpandChat(false);
+                  setPhoneCalling(true);
+                  initiateWebRTC(true); // Video call
+                  setShowVideo(true);
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                }}
+              >
+                <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '16px' }}>Video Call</div>
+                <div style={{ fontSize: '14px', opacity: 0.85 }}>Real time video and voice sentiment emotion recognition</div>
+              </div>
+            </div>
+          )}
         </div>
       )
     }
@@ -805,9 +995,9 @@ function App() {
           </LoadingDiv>
         </div>
     )
-  }
+  }  
 
-  const CHAT_CHAR_DISPLAY = isMobile ? 150 : 700
+  const CHAT_CHAR_DISPLAY = isMobile ? 125 : isSmallSize ? 300 : 700
 
   const renderUserMessage = (key) => (
     <div style={{
@@ -844,7 +1034,8 @@ function App() {
         "-webkit-backdrop-filter": "blur(8px)",
         padding: "6px 8px",
         borderRadius: 8,
-        maxWidth: "70%"
+        maxWidth: "70%",
+        fontSize: isMobile ? 14 : 15
       }}
       title={userVoiceMessage}
       >
@@ -852,6 +1043,56 @@ function App() {
       </div>
     </div>
   );
+
+  const getStylesForVideo = () => {
+    const commonStyles = {
+      position: "absolute",
+      borderRadius: "8px",
+      overflow: "hidden",
+      border: "1px solid rgba(255, 255, 255, 0.6)",
+      backdropFilter: "blur(4px)",
+      WebkitBackdropFilter: "blur(4px)",
+      background: 'rgba(0, 0, 0, 0.3)'
+    }
+
+    if (isMobile) {
+      return {
+        ...commonStyles,
+        top: 280,
+        left: 20,
+        width: 160,
+        height: 160
+      }
+    }
+
+    if (windowWidth < 1200 && windowWidth > 900) {
+      return {
+        ...commonStyles,
+        top: 100,
+        right: 20,
+        width: 280,
+        height: 170
+      }
+    }
+
+    if (windowWidth < 900) {
+      return {
+        ...commonStyles,
+        top: 240,
+        left: 20,
+        width: 280,
+        height: 170
+      }
+    }
+
+    return {
+      ...commonStyles,
+      bottom: 150,
+      right: 20,
+      width: 280,
+      height: 170
+    }
+  }
   
   // Function to render assistant message
   const renderAssistantMessage = (key) => (
@@ -872,7 +1113,8 @@ function App() {
         padding: "6px 8px",
         borderRadius: 8,
         flex: 1,
-        color: "rgba(0, 0, 0, 0.65)"
+        color: "rgba(0, 0, 0, 0.65)",
+        fontSize: isMobile ? 14 : 15
       }}
       title={assistantMessage}
       >
@@ -909,15 +1151,15 @@ function App() {
           border: "1px solid rgba(255, 255, 255, 0.35)",
           borderRadius: "21px",
           color: "white",
-          fontSize: "23px",
-          width: 155,
-          height: 60,
+          fontSize: isMobile ? 18 : "23px",
+          width: isMobile ? 120 : 155,
+          height: isMobile ? 45 : 60,
           display: "flex",
           alignItems: "center",
           justifyContent: "center"
         }}>
-          <img style={{ width: 50 }} src="selfai-logo.png" />
-          <div style={{marginLeft: 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
+          <img style={{ width: isMobile ? 35 : 50 }} src="selfai-logo.png" />
+          <div style={{marginLeft: isMobile ? 5 : 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
             <div>Self AI</div>
           </div>
       </div>
@@ -947,7 +1189,7 @@ function App() {
         ref={modelDropdownRef}
         style={{
           position: "absolute",
-          top: isMobile ? "82px" : "115px",
+          top: isMobile ? "70px" : "115px",
           left: "50%",
           transform: !isMobile ? "translate(-50%, -35%)" : "translateX(-50%)",
           zIndex: 2,
@@ -956,9 +1198,9 @@ function App() {
           WebkitBackdropFilter: "blur(8px)",
           border: "1px solid rgba(255, 255, 255, 0.35)",
           borderRadius: "26px",
-          padding: isModelDropdownOpen ? "0.8rem" : "0.5rem 1.2rem",
+          padding: isModelDropdownOpen ? "0.8rem" : isMobile ? "0px 12px" : "0.5rem 1.2rem",
           color: "white",
-          fontSize: "1.2rem",
+          fontSize: isMobile ? 15 : "1.2rem",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1120,7 +1362,7 @@ function App() {
           "-webkit-backdrop-filter": "blur(15px)",
           border: "1px solid rgba(255, 255, 255, 0.3)",
           borderRadius: "26px",
-          padding: "15px",
+          padding: isMobile ? 9 : "15px",
           color: "white",
           fontSize: 17
         }}
@@ -1129,7 +1371,7 @@ function App() {
       </div>}
       <div style={{
         position: "absolute",
-        top: isMobile ? "150px" : "100px",
+        top: isMobile ? "140px" : "100px",
         left: "16px",
         bottom: isMobile ? "100px" : "20px",
         display: "flex",
@@ -1247,7 +1489,7 @@ function App() {
       {conversing &&
         <div style={{
           position: "absolute",
-          bottom: "140px",
+          bottom: isMobile ? 100 : "140px",
           right: "50%",
           display: "flex",
           transform: "translateX(50%)",
@@ -1354,6 +1596,19 @@ function App() {
             </LoadingDiv>
           </div>)}
         </div>
+        {showVideo && <div style={getStylesForVideo()}>
+          <video
+            id="user-video"
+            autoPlay
+            playsInline
+            muted
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover"
+            }}
+          />
+        </div>}
     </div>
   );
 }

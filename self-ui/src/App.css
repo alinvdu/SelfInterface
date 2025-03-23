@@ -41,6 +41,7 @@ body {
     opacity: 0;
     transform: translateX(-100px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -53,6 +54,7 @@ body {
     opacity: 0;
     transform: translateX(100px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -61,14 +63,32 @@ body {
 
 /* A quick class for user ephemeral messages */
 .userSlideIn {
-  animation: slideInFromLeft 0.8s ease-out;  /* or 0.25s – tweak as you like */
+  animation: slideInFromLeft 0.8s ease-out;
+  /* or 0.25s – tweak as you like */
 }
 
 /* A quick class for assistant ephemeral messages */
 .assistantSlideIn {
-  animation: slideInFromRight 0.8s ease-out; /* or 0.25s – tweak as you like */
+  animation: slideInFromRight 0.8s ease-out;
+  /* or 0.25s – tweak as you like */
 }
 
 .text-areas::placeholder {
   color: white;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.callOptionsDropdown {
+  animation: fadeInUp 0.3s ease-out forwards;
 }
