@@ -435,6 +435,9 @@ class SessionState:
         self.last_audio_chunk_time = None
         self.audio_emotion_results = []
         self.audio_capture_interval = 0.5
+        
+        self.monitor_task = None
+        self.streaming_tts = False
 
 import logging
 import traceback
@@ -1002,7 +1005,8 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
 
     new_tts_event = uuid.uuid4()
     session_state.current_tts_event = new_tts_event
-    
+    session_state.streaming_tts = True  # Set TTS flag
+
     # Check if an existing audio track is available
     if not hasattr(session_state, "audio_track") or session_state.audio_track is None:
         sync_audio_queue = queue.Queue()
@@ -1014,28 +1018,31 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
         sync_audio_queue = session_state.sync_audio_queue
         audio_track = session_state.audio_track
 
-    # Create a future that will be set when audio processing is done
-    processing_complete = asyncio.Future()
-    
-    # async def monitor_frame_queue():
-    #     # Give some time for audio to be processed and queued
-    #     await asyncio.sleep(0.5)
-        
-    #     while not processing_complete.done():
-    #         current_queue_size = session_state.audio_track._frame_queue.qsize()
-    #         if current_queue_size == 0:
-    #             # Wait a bit to ensure no more frames are coming
-    #             await asyncio.sleep(0.5)
-    #             if session_state.audio_track._frame_queue.qsize() == 0:
-    #                 print('Audio processing complete, notifying client')
-    #                 session_state.processing_event.clear()
-    #                 await websocket.send_json({
-    #                     "type": "FINISHED_PROCESSING"
-    #                 })
-    #                 processing_complete.set_result(True)
-    #                 break
-    #         await asyncio.sleep(0.2)
-    
+    # Cancel any existing monitor task first
+    if session_state.monitor_task and not session_state.monitor_task.done():
+        session_state.monitor_task.cancel()
+        try:
+            await session_state.monitor_task
+        except asyncio.CancelledError:
+            pass
+
+    async def monitor_frame_queue():
+        try:
+            while True:
+                if session_state.audio_track._frame_queue.empty() and session_state.audio_track._pcm_queue.empty() and not session_state.streaming_tts:
+                    # Wait just a bit longer to confirm empty
+                    await asyncio.sleep(0.5)
+                    await websocket.send_json({
+                        "type": "FINISHED_TALK"
+                    })
+                    break
+                await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            # Gracefully exit if cancelled
+            return
+
+    session_state.monitor_task = asyncio.create_task(monitor_frame_queue())
+
     async def fill_audio_queue(audio_track, text, my_event_id):
         loop = asyncio.get_running_loop()
         def blocking_tts_task():
@@ -1053,28 +1060,19 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
         try:
             await loop.run_in_executor(executor, blocking_tts_task)
         except asyncio.CancelledError:
-            # Perform additional cleanup if needed
             raise
 
     async def fill_task():
-        # session_state.processing_event.set()
-        # await websocket.send_json({
-        #     "type": "PROCESSING"
-        # })
+        await websocket.send_json({"type": "START_TALK"})
         try:
-            # Offload TTS to separate thread
             await fill_audio_queue(audio_track, text, new_tts_event)
         except Exception as e:
-            print('something happened', e)
-            processing_complete.set_exception(e)
-    
-    # Start both tasks
+            print('TTS streaming error:', e)
+        finally:
+            session_state.streaming_tts = False  # Turn off TTS flag here
+
     session_state.fill_task = asyncio.create_task(fill_task())
-    # monitor_task = asyncio.create_task(monitor_frame_queue())
-    
-    # We could wait here with await asyncio.gather(fill_task, monitor_task)
-    # But for non-blocking operation, we'll let them run independently
-    return processing_complete
+
 
 # --- Generate proactive message ---
 async def generate_proactive_message(user: Optional[dict]):

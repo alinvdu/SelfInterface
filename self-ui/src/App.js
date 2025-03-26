@@ -25,7 +25,7 @@ import LoadingDots from "./components/LoadingDots.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
-const api = "https://selfai.live";
+const api = "http://localhost:8000";
 
 const AVAILABLE_MODELS = [
   {
@@ -43,7 +43,7 @@ const AVAILABLE_MODELS = [
 const DEFAULT_MODEL = AVAILABLE_MODELS[0];
 
 // --- Background Scene Component ---
-function BackgroundScene({ isTalking }) {
+function BackgroundScene({ isTalking, assistantTalking }) {
   return (
     <Canvas
       style={{
@@ -56,18 +56,17 @@ function BackgroundScene({ isTalking }) {
         zIndex: 0,
         pointerEvents: "auto",
       }}
-      camera={{ position: [0.25, -0.05, 0.6], fov: 60 }}
+      camera={{ position: [0.09, 0.012, 0], fov: 60, near: 0.001 }}
       gl={{ alpha: true }}
     >
-      <ambientLight intensity={1.2} />
-      <directionalLight position={[10, 10, 5]} intensity={2.0} />
-      <pointLight position={[0, 5, 0]} intensity={2.0} />
+      <ambientLight color="#ffffff" intensity={0.72} />
+      <directionalLight color="#ffffff" position={[10, 7, 2]} intensity={3.2} />
       <Suspense fallback={null}>
-        <Model isPlaying={isTalking} />
+        <Model isPlaying={isTalking} assistantTalking={assistantTalking} />
         <OrbitControls
-          enableZoom={false}
-          enableRotate={false}
-          enablePan={false}
+          enableZoom={true}
+          enableRotate={true}
+          enablePan={true}
         />
       </Suspense>
     </Canvas>
@@ -239,7 +238,7 @@ function App() {
             if (timestamp - lastUpdateTime >= debounceTime) {
               if (isActive) {
                   // Start talking immediately
-                  setIsTalking(isActive)
+                  //setIsTalking(isActive)
                   // Clear any pending silence timeout
                   if (silenceTimeout) {
                       clearTimeout(silenceTimeout);
@@ -249,7 +248,7 @@ function App() {
                   // Delay stopping to bridge short gaps
                   if (!silenceTimeout) {
                       silenceTimeout = setTimeout(() => {
-                          setIsTalking(isActive);
+                          //setIsTalking(isActive);
                       }, 200);
                   }
               }
@@ -323,8 +322,23 @@ function App() {
   const [isCallDropdownVisible, setIsCallDropdownVisible] = useState(false);
   const callDropdownRef = useRef(null);
   const [showVideo, setShowVideo] = useState(false);
+  const [assistantTalking, setAssistantTalking] = useState(true);
 
   const modelDropdownRef = useRef(null);
+
+  useEffect(() => {
+    // Set up the interval
+    const intervalId = setInterval(() => {
+      setIsTalking(prev => {
+        return !prev;
+      });
+    }, 1000);
+  
+    // Cleanup function to clear the interval when the component unmounts
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, []);
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState(() => {
@@ -581,7 +595,7 @@ function App() {
         setDisconnecting(false);
         setConversing(false);
         setPhoneCalling(false);
-        setIsTalking(false);
+        // setIsTalking(false);
         setProcessing(false);
         toggleExpandChat(true);
       } else if (message.type === "CONV_START") {
@@ -639,6 +653,12 @@ function App() {
 
         // Create a new WebSocket connection with the new session ID
         createAndConnectWs(newSessionData.session_id, token);
+      } else if (message.type === "START_TALK") {
+        console.log('Start talking')
+        setAssistantTalking(true);
+      } else if (message.type === "FINISHED_TALK") {
+        setAssistantTalking(false);
+        console.log('Finished talking')
       } 
     };
 
@@ -651,7 +671,7 @@ function App() {
       setDisconnecting(false);
       setConversing(false);
       setPhoneCalling(false);
-      setIsTalking(false);
+      // setIsTalking(false);
       setProcessing(false);
       if (!manualCloseRef.current) {
         wsReconnectRef.current = setTimeout(() => {  
@@ -1139,7 +1159,7 @@ function App() {
         height: "100vh",
       }}
     >
-      <BackgroundScene isTalking={isTalking} />
+      <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} />
       <div style={{
           position: "absolute",
           top: "16px",
