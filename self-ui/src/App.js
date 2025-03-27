@@ -12,6 +12,7 @@ import { RiVoiceprintFill } from "react-icons/ri";
 import { LuBrainCog } from "react-icons/lu";
 
 import Model from "./Model.js";
+// import Model from "./ModelAnimation.js";
 
 import LoadingDiv from "./components/LoadingDiv";
 import CollapsibleMemoriesPanel from "./components/CollapsiblePanel.js";
@@ -25,7 +26,7 @@ import LoadingDots from "./components/LoadingDots.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
-const api = "http://localhost:8000";
+const api = "https://selfai.live";
 
 const AVAILABLE_MODELS = [
   {
@@ -43,7 +44,8 @@ const AVAILABLE_MODELS = [
 const DEFAULT_MODEL = AVAILABLE_MODELS[0];
 
 // --- Background Scene Component ---
-function BackgroundScene({ isTalking, assistantTalking }) {
+function BackgroundScene({ isTalking, assistantTalking, visemeSequence }) {
+// function BackgroundScene({ isTalking, assistantTalking }) {
   return (
     <Canvas
       style={{
@@ -62,7 +64,8 @@ function BackgroundScene({ isTalking, assistantTalking }) {
       <ambientLight color="#ffffff" intensity={0.72} />
       <directionalLight color="#ffffff" position={[10, 7, 2]} intensity={3.2} />
       <Suspense fallback={null}>
-        <Model isPlaying={isTalking} assistantTalking={assistantTalking} />
+        <Model isPlaying={isTalking} assistantTalking={assistantTalking} visemeSequence={visemeSequence} />
+        {/* <Model isPlaying={isTalking} assistantTalking={assistantTalking} /> */}
         <OrbitControls
           enableZoom={true}
           enableRotate={true}
@@ -81,6 +84,8 @@ function App() {
   const wsRef = useRef(null); // WebSocket for signaling
   const analyserRef = useRef(null); // For audio analysis
   const convDetails = useRef(null);
+
+  const assistantTalkingRef = useRef(null);
 
   // Initialize WebRTC connection
   const initiateWebRTC = async (withCamera = false) => {
@@ -215,7 +220,7 @@ function App() {
         source.connect(analyserRef.current);
 
         let lastUpdateTime = 0;
-        const debounceTime = 150; // 150ms to smooth out word-by-word toggling
+        const debounceTime = 0; // 150ms to smooth out word-by-word toggling
         let silenceTimeout = null; // For delayed silence detection
 
         // Check audio activity
@@ -238,8 +243,11 @@ function App() {
             if (timestamp - lastUpdateTime >= debounceTime) {
               if (isActive) {
                   // Start talking immediately
-                  //setIsTalking(isActive)
+                  setIsTalking(isActive)
                   // Clear any pending silence timeout
+                  if (!assistantTalkingRef.current) {
+                    setAssistantTalking(true);
+                  }
                   if (silenceTimeout) {
                       clearTimeout(silenceTimeout);
                       silenceTimeout = null;
@@ -248,8 +256,8 @@ function App() {
                   // Delay stopping to bridge short gaps
                   if (!silenceTimeout) {
                       silenceTimeout = setTimeout(() => {
-                          //setIsTalking(isActive);
-                      }, 200);
+                          setIsTalking(isActive);
+                      }, 120);
                   }
               }
               lastUpdateTime = timestamp;
@@ -322,23 +330,14 @@ function App() {
   const [isCallDropdownVisible, setIsCallDropdownVisible] = useState(false);
   const callDropdownRef = useRef(null);
   const [showVideo, setShowVideo] = useState(false);
-  const [assistantTalking, setAssistantTalking] = useState(true);
+  const [assistantTalking, setAssistantTalking] = useState(false);
+  const [visemes, setVisemes] = useState();
 
   const modelDropdownRef = useRef(null);
 
   useEffect(() => {
-    // Set up the interval
-    const intervalId = setInterval(() => {
-      setIsTalking(prev => {
-        return !prev;
-      });
-    }, 1000);
-  
-    // Cleanup function to clear the interval when the component unmounts
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, []);
+    assistantTalkingRef.current = assistantTalking
+  }, [assistantTalking])
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState(() => {
@@ -595,9 +594,11 @@ function App() {
         setDisconnecting(false);
         setConversing(false);
         setPhoneCalling(false);
-        // setIsTalking(false);
+        setIsTalking(false);
         setProcessing(false);
         toggleExpandChat(true);
+        setAssistantVoiceMessage(null);
+        setUserVoiceMessage(null);
       } else if (message.type === "CONV_START") {
         convDetails.current = message.timestamp
       } else if (message.type === "CONV_END") {
@@ -617,10 +618,20 @@ function App() {
         }
         setUserVoiceMessage(message.text);
         setLatestMessageType('user');
+        setTimeout(() => {
+          setAssistantVoiceMessage("...")
+          if ("..." !== prevAssistantMessageRef.current) {
+            setAssistantMessageKey(prev => prev + 1);
+            prevAssistantMessageRef.current = "...";
+          }
+          setLatestMessageType('assistant');
+        }, 200)
       } else if (message.type === "assistant_voice_message") {
         // Check if the message is actually new by comparing with the ref
         if (message.text !== prevAssistantMessageRef.current) {
           setAssistantMessageKey(prev => prev + 1);
+          setVisemes(message.visemes)
+          console.log('visemes are:', message.visemes)
           prevAssistantMessageRef.current = message.text;
         }
         setAssistantVoiceMessage(message.text);
@@ -654,11 +665,9 @@ function App() {
         // Create a new WebSocket connection with the new session ID
         createAndConnectWs(newSessionData.session_id, token);
       } else if (message.type === "START_TALK") {
-        console.log('Start talking')
         setAssistantTalking(true);
       } else if (message.type === "FINISHED_TALK") {
         setAssistantTalking(false);
-        console.log('Finished talking')
       } 
     };
 
@@ -671,7 +680,7 @@ function App() {
       setDisconnecting(false);
       setConversing(false);
       setPhoneCalling(false);
-      // setIsTalking(false);
+      setIsTalking(false);
       setProcessing(false);
       if (!manualCloseRef.current) {
         wsReconnectRef.current = setTimeout(() => {  
@@ -1138,7 +1147,7 @@ function App() {
       }}
       title={assistantMessage}
       >
-        {assistantMessage.length > CHAT_CHAR_DISPLAY ? assistantMessage.substring(0, CHAT_CHAR_DISPLAY) + '...' : assistantMessage}
+        {assistantMessage === "..." ? <LoadingDots size={4} /> : assistantMessage.length > CHAT_CHAR_DISPLAY ? assistantMessage.substring(0, CHAT_CHAR_DISPLAY) + '...' : assistantMessage}
       </div>
       <img style={{
         width: 40,
@@ -1159,7 +1168,8 @@ function App() {
         height: "100vh",
       }}
     >
-      <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} />
+      <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} />
+      {/* <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} /> */}
       <div style={{
           position: "absolute",
           top: "16px",
@@ -1209,7 +1219,7 @@ function App() {
         ref={modelDropdownRef}
         style={{
           position: "absolute",
-          top: isMobile ? "70px" : "115px",
+          top: isMobile ? "70px" : "85px",
           left: "50%",
           transform: !isMobile ? "translate(-50%, -35%)" : "translateX(-50%)",
           zIndex: 2,

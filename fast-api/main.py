@@ -30,6 +30,10 @@ from starlette.websockets import WebSocketDisconnect
 
 from HumeHandler import HumeWebSocketHandler
 
+import cmudict
+
+cmu = cmudict.dict()
+
 # Configure logging
 # logging.basicConfig(
 #     level=logging.DEBUG,  # Set to DEBUG to capture all levels
@@ -438,6 +442,7 @@ class SessionState:
         
         self.monitor_task = None
         self.streaming_tts = False
+        self.sent_started_talking = False
 
 import logging
 import traceback
@@ -476,6 +481,55 @@ def merge_transcripts(transcripts):
     # Join segments with a space (or other separator if needed)
     return " ".join(merged_segments)
 
+phoneme_to_viseme = {
+    'M': 'p/m/',
+    'P': 'p/m/',
+    'B': 'p/m/',
+    'AE': 'a/ah/',
+    'AH': 'a/ah/',
+    'AA': 'a/ah/',
+    'AO': 'a/ah/',
+    'EY': '/ee/',
+    'EH': '/ee/',
+    'ER': '/ee/',
+    'IH': '/ee/',
+    'IY': '/ee/',
+    'UW': '/oo/',
+    'UH': '/oo/',
+    'OW': '/oo/',
+    'F': '/ff/vv',
+    'V': '/ff/vv',
+    'CH': '/ch/',
+    'SH': '/ch/',
+    'JH': '/ch/',
+    'S': '/ch/',
+    'Z': '/ch/',
+    'K': '/kk/',
+    'G': '/kk/',
+    'T': 'rest',
+    'D': 'rest',
+    'N': 'rest',
+    'L': 'rest',
+    'R': 'rest',
+    'Y': 'rest',
+    'W': '/oo/',
+    'TH': '/ff/vv',
+    'DH': '/ff/vv',
+    'HH': 'rest',
+    # You can expand this further if needed
+}
+
+viseme_durations = {
+    "p/m/": 60,
+    "a/ah/": 150,
+    "/ee/": 150,
+    "/oo/": 150,
+    "/ff/vv": 60,
+    "/ch/": 60,
+    "/kk/": 60,
+    "rest": 60
+}
+
 async def generate_and_send_proactive_message(user, session_id, websocket):
     try:
         proactive_message_chat = random.choice(empathetic_greetings)
@@ -497,6 +551,72 @@ async def generate_and_send_proactive_message(user, session_id, websocket):
     
     except Exception as e:
         print(f"Error generating or sending proactive message: {e}")
+        
+def text_to_phonemes(sentence):
+    tokens = re.findall(r"\w+|[.,!?;]", sentence)
+    result = []
+    for token in tokens:
+        if re.match(r'\w+', token):
+            phonemes = cmu.get(token.lower(), [['rest']])[0]  # Default to 'rest' if not found
+            phonemes_clean = [re.sub(r'\d+', '', p) for p in phonemes]
+            result.extend(phonemes_clean)
+        else:
+            result.append(token)
+    return result
+
+# Function to generate viseme timings
+def generate_viseme_timings(phrase):
+    phonemes_and_punct = text_to_phonemes(phrase)
+    timings = []
+    current_time = 0
+
+    # Temporary list to store uncollapsed visemes
+    raw_visemes = []
+
+    for phoneme in phonemes_and_punct:
+        if phoneme in [',', ';', '.', '!', '?']:
+            continue
+        else:
+            viseme = phoneme_to_viseme.get(phoneme, "rest")
+            raw_visemes.append({
+                "viseme": viseme, 
+                "start": current_time, 
+                "end": current_time + viseme_durations[viseme]
+            })
+            current_time += viseme_durations[viseme]
+
+    # Collapse consecutive identical visemes
+    if raw_visemes:
+        current_viseme = raw_visemes[0]["viseme"]
+        start_time = raw_visemes[0]["start"]
+        end_time = raw_visemes[0]["end"]
+        
+        for i in range(1, len(raw_visemes)):
+            if raw_visemes[i]["viseme"] == current_viseme:
+                # Extend the end time for the current viseme
+                end_time = raw_visemes[i]["end"]
+            else:
+                # Add the collapsed viseme to the final timings
+                timings.append({
+                    "viseme": current_viseme,
+                    "start": start_time,
+                    "end": end_time
+                })
+                
+                # Start a new viseme
+                current_viseme = raw_visemes[i]["viseme"]
+                start_time = raw_visemes[i]["start"]
+                end_time = raw_visemes[i]["end"]
+        
+        # Add the last viseme
+        timings.append({
+            "viseme": current_viseme,
+            "start": start_time,
+            "end": end_time
+        })
+
+    return {"phrase": phrase, "visemes": timings}
+
 
 # --- WebSocket endpoint ---
 @app.websocket("/ws")
@@ -818,10 +938,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         asyncio.create_task(handle_video_track(track, session_id, session_state))
 
                 proactive_text = random.choice(empathetic_greetings)
+
+                visemes = generate_viseme_timings(proactive_text)
                 print('Proactive message for phone call: ', proactive_text)
                 await websocket.send_json({
                     "type": "assistant_voice_message",
-                    "text": proactive_text
+                    "text": proactive_text,
+                    "visemes": visemes
                 })
                 history = conversation_histories[session_id]
                 if not history:
@@ -1006,6 +1129,7 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
     new_tts_event = uuid.uuid4()
     session_state.current_tts_event = new_tts_event
     session_state.streaming_tts = True  # Set TTS flag
+    session_state.sent_started_talking = False
 
     # Check if an existing audio track is available
     if not hasattr(session_state, "audio_track") or session_state.audio_track is None:
@@ -1055,6 +1179,9 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
                 for chunk in response.iter_bytes():
                     if session_state.current_tts_event != my_event_id:
                         break
+                    if not session_state.sent_started_talking:
+                        # websocket.send_json({"type": "START_TALK"})
+                        session_state.sent_started_talking = True
                     audio_track.write_pcm(chunk)
 
         try:
@@ -1063,7 +1190,6 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
             raise
 
     async def fill_task():
-        await websocket.send_json({"type": "START_TALK"})
         try:
             await fill_audio_queue(audio_track, text, new_tts_event)
         except Exception as e:
@@ -1634,11 +1760,14 @@ async def process_message(
             model=model_ver,
             messages=history
         )
+        
         assistant_text = chat_response.choices[0].message.content
         print('psychologist response is: ', assistant_text)
+        visemes = generate_viseme_timings(assistant_text)
         await websocket.send_json({
             "type": "assistant_voice_message",
-            "text": assistant_text
+            "text": assistant_text,
+            "visemes": visemes
         })
         history.append({"role": "assistant", "content": assistant_text})
         

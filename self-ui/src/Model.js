@@ -7,7 +7,9 @@ window.messageINeed = []
 
 function Model({ 
   scale = 0.1, 
-  visemeSequence = null
+  visemeSequence = null,
+  assistantTalking,
+  isPlaying = false
 }) {
   const { scene, animations } = useGLTF('/assets/ai-modern-psychologist.glb');
   const { actions } = useAnimations(animations, scene);
@@ -18,6 +20,13 @@ function Model({
   const lastVisemeRef = useRef(null);
   const currentShapeKeyValuesRef = useRef({});
   const jawRootRef = useRef(null);
+
+  const currentAnimationRef = useRef(null);
+  const availableAnimationsRef = useRef([]);
+  const intervalRef = useRef(null);
+
+  const isPlayingRef = useRef(isPlaying);
+  const isPausedRef = useRef(false);
   
   // Initialize jaw movement quaternion sequence
   const jawMovementVectorRef = useRef([]);
@@ -136,17 +145,17 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // A slight jaw movement
-          vectorPosition: 0.15,
+          vectorPosition: 0,
           ref: null
         }
       },
       shapeKeys: {
         "V_Open": { default: 0, target: 0 },
-        "V_Explosive": { default: 0, target: 0.8 },
+        "V_Explosive": { default: 0, target: 0.4 },
         "V_Dental_Lip": { default: 0, target: 0 },
         "V_Tight_O": { default: 0, target: 0 },
         "V_Tight": { default: 0, target: 0 },
-        "Vwide": { default: 0, target: 0 },
+        "Vwide": { default: 0, target: 0.1 },
         "V_Affricate": { default: 0, target: 0 },
         "V_Lip_Open": { default: 0, target: 0 }
       }
@@ -156,7 +165,7 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // Medium jaw movement
-          vectorPosition: 0.3,
+          vectorPosition: 0.2,
           ref: null
         }
       },
@@ -176,7 +185,7 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // Wide open jaw movement
-          vectorPosition: 0.8,
+          vectorPosition: 0.68,
           ref: null
         }
       },
@@ -196,7 +205,7 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // Medium-high jaw movement
-          vectorPosition: 0.6,
+          vectorPosition: 0.4,
           ref: null
         }
       },
@@ -216,7 +225,7 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // Medium-high jaw movement
-          vectorPosition: 0.5,
+          vectorPosition: 0.3,
           ref: null
         }
       },
@@ -236,7 +245,7 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // Medium-low jaw movement
-          vectorPosition: 0.3,
+          vectorPosition: 0.05,
           ref: null
         }
       },
@@ -256,7 +265,7 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // Medium jaw movement
-          vectorPosition: 0.4,
+          vectorPosition: 0.1,
           ref: null
         }
       },
@@ -276,7 +285,7 @@ function Model({
         "CC_Base_JawRoot": {
           defaultQuaternion: null, // Will be set during initialization
           // Medium-low jaw movement
-          vectorPosition: 0.25,
+          vectorPosition: 0.18,
           ref: null
         }
       },
@@ -375,6 +384,11 @@ function Model({
       
       // Initialize current shape key values to defaults (typically zeros)
       initializeShapeKeyValues();
+
+      if (!isPlayingRef.current) {
+        clockRef.current.stop();
+        isPausedRef.current = true;
+      }
     }
   };
 
@@ -413,13 +427,114 @@ function Model({
   // Set up animations for body movements
   useEffect(() => {
     if (animations.length > 0) {
-      // Use first animation as idle
+      // Set up the idle animation (first one) - this always plays
       const idleClip = animations[0];
       const idleAction = actions[idleClip.name];
       idleAction.timeScale = 0.75;
       idleAction.reset().play();
+      
+      // Store all other animations
+      availableAnimationsRef.current = animations.slice(1).map(clip => ({
+        name: clip.name,
+        action: actions[clip.name]
+      }));
     }
   }, [actions, animations]);
+
+  useEffect(() => {
+    const playRandomAnimation = () => {
+      // Stop current animation if any
+      if (currentAnimationRef.current) {
+        currentAnimationRef.current.fadeOut(0.5);
+        currentAnimationRef.current = null;
+      }
+      
+      // Don't play new animations if assistant is talking or no animations available
+      if (assistantTalking || availableAnimationsRef.current.length === 0) {
+        return;
+      }
+      
+      // Select random animation from available ones
+      const randomIndex = Math.floor(Math.random() * availableAnimationsRef.current.length);
+      const randomAnim = availableAnimationsRef.current[randomIndex];
+      
+      // Configure animation settings
+      randomAnim.action.reset();
+      randomAnim.action.clampWhenFinished = true; // Stop at the end, don't loop
+      randomAnim.action.loop = THREE.LoopOnce;
+      randomAnim.action.timeScale = 0.75;
+      
+      // Fade in the random animation
+      randomAnim.action.fadeIn(0.5).play();
+      currentAnimationRef.current = randomAnim.action;
+    };
+  
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    // If assistant is talking, stop any current animation
+    // (idle animation continues playing in the background)
+    if (assistantTalking) {
+      if (currentAnimationRef.current) {
+        currentAnimationRef.current.fadeOut(0.2);
+        currentAnimationRef.current = null;
+      }
+      startAnimation();
+      return;
+    }
+
+    if (initialized.current) {
+      // Create a temporary "rest only" sequence
+      const resetSequence = {
+        phrase: "Reset",
+        visemes: [
+          { viseme: "rest", start: 0, end: 500 }
+        ]
+      };
+      
+      // Set this as the current sequence
+      sequenceRef.current = resetSequence;
+      
+      // Reset animation time to start of this sequence
+      animationTimeRef.current = 0;
+      
+      // Explicitly set target jaw position to rest (index 0)
+      targetJawIndexRef.current = 0;
+      
+      // Let this sequence play for a short duration to reset everything
+      setTimeout(() => {
+        stopAnimation();
+        // Now play random animations
+        playRandomAnimation(); // Play one immediately
+        intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+      }, 200); // Just enough time to animate to rest
+    } else {
+      // If not initialized yet, just stop animation
+      stopAnimation();
+      resetAnimation();
+      
+      // Play random animations
+      playRandomAnimation(); // Play one immediately
+      intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+    }
+    // Cleanup function
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [assistantTalking]);
+
+  useEffect(() => {
+    // Update the current sequence reference when visemeSequence changes
+    if (visemeSequence) {
+      sequenceRef.current = visemeSequence;
+    }
+  }, [visemeSequence]);
 
   // Apply scale
   useEffect(() => {
@@ -565,17 +680,18 @@ function Model({
 
   // Main animation loop
   useFrame(() => {
-    if (!initialized.current || !isAnimating || jawMovementVectorRef.current.length === 0) {
+    if (!initialized.current || !isAnimating || 
+        (isPausedRef.current && !isPlayingRef.current) || 
+        jawMovementVectorRef.current.length === 0) {
       return;
     }
-    
+      
     // Update time in milliseconds
     const deltaMs = clockRef.current.getDelta() * 1000;
     animationTimeRef.current += deltaMs;
     
     // Find current viseme
     const currentViseme = getCurrentViseme(animationTimeRef.current);
-    
     if (currentViseme) {
       // Check if we're transitioning to a new viseme
       const isNewViseme = !lastVisemeRef.current || 
@@ -600,8 +716,6 @@ function Model({
           // Faster for active speech
           jawMovementSpeedRef.current = 2;
         }
-        
-        console.log(`Transitioning to viseme: ${currentViseme.viseme}`);
       }
       
       // Calculate progress through this viseme
@@ -678,52 +792,49 @@ function Model({
   const resetToRestPose = () => {
     const restViseme = visemeDefsRef.current["rest"];
     if (!restViseme) return;
-    
-    // Set target index to 0 (the default/rest position)
+  
+    // Directly set target index to rest position
     targetJawIndexRef.current = 0;
-    
-    // Use a slower movement for reset
-    jawMovementSpeedRef.current = 1;
-    
-    // Gradually move jaw back to default position
+    currentJawIndexRef.current = 0; // immediate reset
+  
+    // Apply rest quaternion directly to the jaw
     if (restViseme.bones) {
       Object.values(restViseme.bones).forEach(bone => {
         if (!bone.ref) return;
-        
+  
         if (bone.ref.name === "CC_Base_JawRoot") {
-          // Move toward the target (updates currentJawIndexRef)
-          const currentIndex = moveTowardTargetIndex();
-          
-          // Get the quaternion at the current index (no interpolation)
-          const quaternion = jawMovementVectorRef.current[currentIndex];
-          
-          // Apply the quaternion directly
+          const quaternion = jawMovementVectorRef.current[0];
           bone.ref.quaternion.copy(quaternion);
         } else if (bone.defaultQuaternion) {
-          // For other bones, simply set to default
           bone.ref.quaternion.copy(bone.defaultQuaternion);
         }
       });
     }
-    
-    // Gradually transition shape keys to zero - for smoother reset
+  
+    // Reset all shape keys to default instantly
     Object.entries(shapeKeyMeshesRef.current).forEach(([keyName, { mesh, index }]) => {
-      const currentValue = mesh.morphTargetInfluences[index];
-      
-      // Apply a small step toward zero
-      if (currentValue > 0.01) {
-        mesh.morphTargetInfluences[index] = currentValue * 0.9; // Smooth decay
-      } else {
-        mesh.morphTargetInfluences[index] = 0;
-      }
-      
-      // Update the current value reference
-      currentShapeKeyValuesRef.current[keyName] = mesh.morphTargetInfluences[index];
+      mesh.morphTargetInfluences[index] = 0;
+      currentShapeKeyValuesRef.current[keyName] = 0;
     });
-  };
+  };  
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  
+    if (isPlaying) {
+      if (isPausedRef.current) {
+        clockRef.current.start();
+        isPausedRef.current = false;
+      }
+    } else {
+      clockRef.current.stop();
+      isPausedRef.current = true;
+      resetToRestPose(); // Explicitly reset pose on pause
+    }
+  }, [isPlaying]);
 
   return (
-    <group position={[0, -0.15, 0]}>
+    <group position={[0, -0.149, 0]}>
       <primitive object={scene} dispose={null} />
     </group>
   );
