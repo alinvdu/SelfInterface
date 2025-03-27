@@ -296,7 +296,12 @@ function App() {
     ));
   };
 
-  const { token, user, loading } = useAuth();
+  // const { token, user, loading } = useAuth()
+  const { token, user, loading } = {
+    token: null,
+    user: null,
+    loading: false
+  }
   const [isTalking, setIsTalking] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [memories, setMemories] = useState([]);
