@@ -30,6 +30,10 @@ from starlette.websockets import WebSocketDisconnect
 
 from HumeHandler import HumeWebSocketHandler
 
+import cmudict
+
+cmu = cmudict.dict()
+
 # Configure logging
 # logging.basicConfig(
 #     level=logging.DEBUG,  # Set to DEBUG to capture all levels
@@ -435,6 +439,10 @@ class SessionState:
         self.last_audio_chunk_time = None
         self.audio_emotion_results = []
         self.audio_capture_interval = 0.5
+        
+        self.monitor_task = None
+        self.streaming_tts = False
+        self.sent_started_talking = False
 
 import logging
 import traceback
@@ -473,6 +481,55 @@ def merge_transcripts(transcripts):
     # Join segments with a space (or other separator if needed)
     return " ".join(merged_segments)
 
+phoneme_to_viseme = {
+    'M': 'p/m/',
+    'P': 'p/m/',
+    'B': 'p/m/',
+    'AE': 'a/ah/',
+    'AH': 'a/ah/',
+    'AA': 'a/ah/',
+    'AO': 'a/ah/',
+    'EY': '/ee/',
+    'EH': '/ee/',
+    'ER': '/ee/',
+    'IH': '/ee/',
+    'IY': '/ee/',
+    'UW': '/oo/',
+    'UH': '/oo/',
+    'OW': '/oo/',
+    'F': '/ff/vv',
+    'V': '/ff/vv',
+    'CH': '/ch/',
+    'SH': '/ch/',
+    'JH': '/ch/',
+    'S': '/ch/',
+    'Z': '/ch/',
+    'K': '/kk/',
+    'G': '/kk/',
+    'T': 'rest',
+    'D': 'rest',
+    'N': 'rest',
+    'L': 'rest',
+    'R': 'rest',
+    'Y': 'rest',
+    'W': '/oo/',
+    'TH': '/ff/vv',
+    'DH': '/ff/vv',
+    'HH': 'rest',
+    # You can expand this further if needed
+}
+
+viseme_durations = {
+    "p/m/": 60,
+    "a/ah/": 150,
+    "/ee/": 150,
+    "/oo/": 150,
+    "/ff/vv": 60,
+    "/ch/": 60,
+    "/kk/": 60,
+    "rest": 60
+}
+
 async def generate_and_send_proactive_message(user, session_id, websocket):
     try:
         proactive_message_chat = random.choice(empathetic_greetings)
@@ -494,6 +551,72 @@ async def generate_and_send_proactive_message(user, session_id, websocket):
     
     except Exception as e:
         print(f"Error generating or sending proactive message: {e}")
+        
+def text_to_phonemes(sentence):
+    tokens = re.findall(r"\w+|[.,!?;]", sentence)
+    result = []
+    for token in tokens:
+        if re.match(r'\w+', token):
+            phonemes = cmu.get(token.lower(), [['rest']])[0]  # Default to 'rest' if not found
+            phonemes_clean = [re.sub(r'\d+', '', p) for p in phonemes]
+            result.extend(phonemes_clean)
+        else:
+            result.append(token)
+    return result
+
+# Function to generate viseme timings
+def generate_viseme_timings(phrase):
+    phonemes_and_punct = text_to_phonemes(phrase)
+    timings = []
+    current_time = 0
+
+    # Temporary list to store uncollapsed visemes
+    raw_visemes = []
+
+    for phoneme in phonemes_and_punct:
+        if phoneme in [',', ';', '.', '!', '?']:
+            continue
+        else:
+            viseme = phoneme_to_viseme.get(phoneme, "rest")
+            raw_visemes.append({
+                "viseme": viseme, 
+                "start": current_time, 
+                "end": current_time + viseme_durations[viseme]
+            })
+            current_time += viseme_durations[viseme]
+
+    # Collapse consecutive identical visemes
+    if raw_visemes:
+        current_viseme = raw_visemes[0]["viseme"]
+        start_time = raw_visemes[0]["start"]
+        end_time = raw_visemes[0]["end"]
+        
+        for i in range(1, len(raw_visemes)):
+            if raw_visemes[i]["viseme"] == current_viseme:
+                # Extend the end time for the current viseme
+                end_time = raw_visemes[i]["end"]
+            else:
+                # Add the collapsed viseme to the final timings
+                timings.append({
+                    "viseme": current_viseme,
+                    "start": start_time,
+                    "end": end_time
+                })
+                
+                # Start a new viseme
+                current_viseme = raw_visemes[i]["viseme"]
+                start_time = raw_visemes[i]["start"]
+                end_time = raw_visemes[i]["end"]
+        
+        # Add the last viseme
+        timings.append({
+            "viseme": current_viseme,
+            "start": start_time,
+            "end": end_time
+        })
+
+    return {"phrase": phrase, "visemes": timings}
+
 
 # --- WebSocket endpoint ---
 @app.websocket("/ws")
@@ -815,10 +938,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         asyncio.create_task(handle_video_track(track, session_id, session_state))
 
                 proactive_text = random.choice(empathetic_greetings)
+
+                visemes = generate_viseme_timings(proactive_text)
                 print('Proactive message for phone call: ', proactive_text)
                 await websocket.send_json({
                     "type": "assistant_voice_message",
-                    "text": proactive_text
+                    "text": proactive_text,
+                    "visemes": visemes
                 })
                 history = conversation_histories[session_id]
                 if not history:
@@ -1002,7 +1128,9 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
 
     new_tts_event = uuid.uuid4()
     session_state.current_tts_event = new_tts_event
-    
+    session_state.streaming_tts = True  # Set TTS flag
+    session_state.sent_started_talking = False
+
     # Check if an existing audio track is available
     if not hasattr(session_state, "audio_track") or session_state.audio_track is None:
         sync_audio_queue = queue.Queue()
@@ -1014,28 +1142,31 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
         sync_audio_queue = session_state.sync_audio_queue
         audio_track = session_state.audio_track
 
-    # Create a future that will be set when audio processing is done
-    processing_complete = asyncio.Future()
-    
-    # async def monitor_frame_queue():
-    #     # Give some time for audio to be processed and queued
-    #     await asyncio.sleep(0.5)
-        
-    #     while not processing_complete.done():
-    #         current_queue_size = session_state.audio_track._frame_queue.qsize()
-    #         if current_queue_size == 0:
-    #             # Wait a bit to ensure no more frames are coming
-    #             await asyncio.sleep(0.5)
-    #             if session_state.audio_track._frame_queue.qsize() == 0:
-    #                 print('Audio processing complete, notifying client')
-    #                 session_state.processing_event.clear()
-    #                 await websocket.send_json({
-    #                     "type": "FINISHED_PROCESSING"
-    #                 })
-    #                 processing_complete.set_result(True)
-    #                 break
-    #         await asyncio.sleep(0.2)
-    
+    # Cancel any existing monitor task first
+    if session_state.monitor_task and not session_state.monitor_task.done():
+        session_state.monitor_task.cancel()
+        try:
+            await session_state.monitor_task
+        except asyncio.CancelledError:
+            pass
+
+    async def monitor_frame_queue():
+        try:
+            while True:
+                if session_state.audio_track._frame_queue.empty() and session_state.audio_track._pcm_queue.empty() and not session_state.streaming_tts:
+                    # Wait just a bit longer to confirm empty
+                    await asyncio.sleep(0.5)
+                    await websocket.send_json({
+                        "type": "FINISHED_TALK"
+                    })
+                    break
+                await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            # Gracefully exit if cancelled
+            return
+
+    session_state.monitor_task = asyncio.create_task(monitor_frame_queue())
+
     async def fill_audio_queue(audio_track, text, my_event_id):
         loop = asyncio.get_running_loop()
         def blocking_tts_task():
@@ -1048,33 +1179,26 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
                 for chunk in response.iter_bytes():
                     if session_state.current_tts_event != my_event_id:
                         break
+                    if not session_state.sent_started_talking:
+                        # websocket.send_json({"type": "START_TALK"})
+                        session_state.sent_started_talking = True
                     audio_track.write_pcm(chunk)
 
         try:
             await loop.run_in_executor(executor, blocking_tts_task)
         except asyncio.CancelledError:
-            # Perform additional cleanup if needed
             raise
 
     async def fill_task():
-        # session_state.processing_event.set()
-        # await websocket.send_json({
-        #     "type": "PROCESSING"
-        # })
         try:
-            # Offload TTS to separate thread
             await fill_audio_queue(audio_track, text, new_tts_event)
         except Exception as e:
-            print('something happened', e)
-            processing_complete.set_exception(e)
-    
-    # Start both tasks
+            print('TTS streaming error:', e)
+        finally:
+            session_state.streaming_tts = False  # Turn off TTS flag here
+
     session_state.fill_task = asyncio.create_task(fill_task())
-    # monitor_task = asyncio.create_task(monitor_frame_queue())
-    
-    # We could wait here with await asyncio.gather(fill_task, monitor_task)
-    # But for non-blocking operation, we'll let them run independently
-    return processing_complete
+
 
 # --- Generate proactive message ---
 async def generate_proactive_message(user: Optional[dict]):
@@ -1636,11 +1760,14 @@ async def process_message(
             model=model_ver,
             messages=history
         )
+        
         assistant_text = chat_response.choices[0].message.content
         print('psychologist response is: ', assistant_text)
+        visemes = generate_viseme_timings(assistant_text)
         await websocket.send_json({
             "type": "assistant_voice_message",
-            "text": assistant_text
+            "text": assistant_text,
+            "visemes": visemes
         })
         history.append({"role": "assistant", "content": assistant_text})
         
