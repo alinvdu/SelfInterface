@@ -9,7 +9,8 @@ function Model({
   scale = 0.1, 
   visemeSequence = null,
   assistantTalking,
-  isPlaying = false
+  isPlaying = false,
+  currentEmote = null
 }) {
   const { scene, animations } = useGLTF('/assets/ai-modern-psychologist.glb');
   const { actions } = useAnimations(animations, scene);
@@ -21,12 +22,17 @@ function Model({
   const currentShapeKeyValuesRef = useRef({});
   const jawRootRef = useRef(null);
 
+  const prevEmoteRef = useRef(null);
+
   const currentAnimationRef = useRef(null);
   const availableAnimationsRef = useRef([]);
+  const allAnimationsRef = useRef([]);
   const intervalRef = useRef(null);
 
   const isPlayingRef = useRef(isPlaying);
   const isPausedRef = useRef(false);
+
+  const isShowingEmotionRef = useRef(false);
   
   // Initialize jaw movement quaternion sequence
   const jawMovementVectorRef = useRef([]);
@@ -432,42 +438,85 @@ function Model({
       const idleAction = actions[idleClip.name];
       idleAction.timeScale = 0.75;
       idleAction.reset().play();
+
+      const avoidAnimations = {
+        'Angry': true,
+        'Sad': true
+      }
       
       // Store all other animations
-      availableAnimationsRef.current = animations.slice(1).map(clip => ({
+      availableAnimationsRef.current = animations.slice(1).filter(clip => !avoidAnimations[clip.name]).map(clip => ({
+        name: clip.name,
+        action: actions[clip.name]
+      }));
+
+      allAnimationsRef.current = animations.slice(1).map(clip => ({
         name: clip.name,
         action: actions[clip.name]
       }));
     }
   }, [actions, animations]);
 
+  const findAnimationByName = (animationName) => {
+    if (!allAnimationsRef.current || allAnimationsRef.current.length === 0) {
+      return null;
+    }
+    
+    // Find animation that contains the search term
+    return allAnimationsRef.current.find(anim => 
+      anim.name.toLowerCase().includes(animationName.toLowerCase())
+    );
+  };
+
+  const playRandomAnimation = () => {
+    // Stop current animation if any
+    if (currentAnimationRef.current) {
+      currentAnimationRef.current.fadeOut(0.5);
+      currentAnimationRef.current = null;
+    }
+    
+    // Don't play new animations if assistant is talking or no animations available
+    if (assistantTalking || availableAnimationsRef.current.length === 0) {
+      return;
+    }
+    
+    // Select random animation from available ones
+    const randomIndex = Math.floor(Math.random() * availableAnimationsRef.current.length);
+    const randomAnim = availableAnimationsRef.current[randomIndex];
+    
+    // Configure animation settings
+    randomAnim.action.reset();
+    randomAnim.action.clampWhenFinished = true; // Stop at the end, don't loop
+    randomAnim.action.loop = THREE.LoopOnce;
+    randomAnim.action.timeScale = 0.75;
+    
+    // Fade in the random animation
+    randomAnim.action.fadeIn(0.5).play();
+    currentAnimationRef.current = randomAnim.action;
+  };
+
   useEffect(() => {
-    const playRandomAnimation = () => {
-      // Stop current animation if any
-      if (currentAnimationRef.current) {
-        currentAnimationRef.current.fadeOut(0.5);
-        currentAnimationRef.current = null;
-      }
-      
-      // Don't play new animations if assistant is talking or no animations available
-      if (assistantTalking || availableAnimationsRef.current.length === 0) {
-        return;
-      }
-      
-      // Select random animation from available ones
-      const randomIndex = Math.floor(Math.random() * availableAnimationsRef.current.length);
-      const randomAnim = availableAnimationsRef.current[randomIndex];
-      
-      // Configure animation settings
-      randomAnim.action.reset();
-      randomAnim.action.clampWhenFinished = true; // Stop at the end, don't loop
-      randomAnim.action.loop = THREE.LoopOnce;
-      randomAnim.action.timeScale = 0.75;
-      
-      // Fade in the random animation
-      randomAnim.action.fadeIn(0.5).play();
-      currentAnimationRef.current = randomAnim.action;
-    };
+    // if (prevAssistantTalkingRef.current === true && assistantTalking === false) {
+    //   // Get the current sequence
+    //   const sequence = sequenceRef.current;
+    //   if (sequence && sequence.visemes && sequence.visemes.length > 0) {
+    //     const lastViseme = sequence.visemes[sequence.visemes.length - 1];
+    //     const totalDuration = lastViseme.end;
+    //     const remainingTime = totalDuration - animationTimeRef.current;
+    //     const progressPercentage = ((animationTimeRef.current / totalDuration) * 100).toFixed(2);
+        
+    //     console.log(`Animation stopped at: ${progressPercentage}% complete`);
+    //     console.log(`Time remaining: ${remainingTime.toFixed(2)}ms out of ${totalDuration}ms total`);
+        
+    //     // Also push to your global array
+    //     window.messageINeed.push({
+    //       stoppedAt: animationTimeRef.current,
+    //       totalDuration,
+    //       progressPercentage: parseFloat(progressPercentage),
+    //       remainingTime
+    //     });
+    //   }
+    // }
   
     // Clear any existing interval
     if (intervalRef.current) {
@@ -505,12 +554,13 @@ function Model({
       targetJawIndexRef.current = 0;
       
       // Let this sequence play for a short duration to reset everything
-      setTimeout(() => {
-        stopAnimation();
-        // Now play random animations
-        playRandomAnimation(); // Play one immediately
-        intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
-      }, 200); // Just enough time to animate to rest
+      if (!isShowingEmotionRef.current) {
+        setTimeout(() => {
+          stopAnimation();
+          // Now play random animations
+          intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+        }, 200); // Just enough time to animate to rest
+      }
     } else {
       // If not initialized yet, just stop animation
       stopAnimation();
@@ -832,6 +882,70 @@ function Model({
       resetToRestPose(); // Explicitly reset pose on pause
     }
   }, [isPlaying]);
+
+  useEffect(() => {
+    // Only trigger when currentEmote changes from previous value, 
+    // is not null, and assistant is not talking
+    if (currentEmote && 
+        prevEmoteRef.current !== currentEmote && 
+        !assistantTalking) {
+
+      isShowingEmotionRef.current = true;
+      
+      // Store current emote in ref to track changes
+      prevEmoteRef.current = currentEmote;
+      
+      // Stop any running interval animations
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      
+      // Stop current animation if any
+      if (currentAnimationRef.current) {
+        currentAnimationRef.current.fadeOut(0.2);
+        currentAnimationRef.current = null;
+      }
+
+      // Play the appropriate animation based on emote type
+      switch (currentEmote) {
+        case 'happy': {
+          const animation = findAnimationByName('Smile_left_right')
+          animation.action.loop = THREE.LoopOnce;
+          animation.action.reset().fadeIn(0.3).play();
+          currentAnimationRef.current = animation.action;
+          break;
+        }
+        case 'sad': {
+          const animation = findAnimationByName('Sad')
+          animation.action.loop = THREE.LoopOnce;
+          animation.action.reset().fadeIn(0.3).play();
+          currentAnimationRef.current = animation.action;
+          break;
+        }
+        case 'anger':
+        case 'disappointment': {
+          const animation = findAnimationByName('Angry')
+          animation.action.loop = THREE.LoopOnce;
+          animation.action.reset().fadeIn(0.3).play();
+          currentAnimationRef.current = animation.action;
+          break;
+        }
+        default:
+          // No specific emotion
+          break;
+      }
+      
+      // Restart interval animations after a delay
+      setTimeout(() => {
+        isShowingEmotionRef.current = false;
+        if (!assistantTalking && !currentAnimationRef.current) {
+          playRandomAnimation(); // Restart random animations
+          intervalRef.current = setInterval(playRandomAnimation, 15000);
+        }
+      }, 5000); // 5 seconds delay after emotion
+    }
+  }, [currentEmote, assistantTalking, actions]);
 
   return (
     <group position={[0, -0.149, 0]}>

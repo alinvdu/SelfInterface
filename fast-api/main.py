@@ -520,14 +520,14 @@ phoneme_to_viseme = {
 }
 
 viseme_durations = {
-    "p/m/": 60,
-    "a/ah/": 150,
-    "/ee/": 150,
-    "/oo/": 150,
-    "/ff/vv": 60,
-    "/ch/": 60,
-    "/kk/": 60,
-    "rest": 60
+    "p/m/": 55,
+    "a/ah/": 110,
+    "/ee/": 110,
+    "/oo/": 110,
+    "/ff/vv": 55,
+    "/ch/": 55,
+    "/kk/": 55,
+    "rest": 55
 }
 
 async def generate_and_send_proactive_message(user, session_id, websocket):
@@ -1120,7 +1120,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # --- TTS streaming to WebRTC ---
 import queue
 
-async def stream_tts_to_webrtc(pc, text, session_id, websocket):
+async def stream_tts_to_webrtc(pc, text, session_id, websocket, emote_type=None):
     session_state = session_states.get(session_id)
     if not session_state:
         session_state = SessionState()
@@ -1156,9 +1156,11 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket):
                 if session_state.audio_track._frame_queue.empty() and session_state.audio_track._pcm_queue.empty() and not session_state.streaming_tts:
                     # Wait just a bit longer to confirm empty
                     await asyncio.sleep(0.5)
-                    await websocket.send_json({
-                        "type": "FINISHED_TALK"
-                    })
+                    payload = {"type": "FINISHED_TALK"}
+                    if emote_type:
+                        payload["emote_type"] = emote_type
+                    
+                    await websocket.send_json(payload)
                     break
                 await asyncio.sleep(0.2)
         except asyncio.CancelledError:
@@ -1693,6 +1695,58 @@ def clean_message_content(content):
     
     return content
 
+# Router based agent
+async def determine_response_type(user_text):
+    """Determines whether to respond with a regular message or with an emote."""
+    prompt = f"""
+    Based on the user message: "{user_text}"
+    
+    Decide if you should:
+    1. Respond with a regular message
+    2. Respond with a facial expression message type
+    
+    If responding with facial expression message type, you must specify:
+    - A message that encourages the user about your ability to show the specific emotion through the facial expression at the end of the sentence
+    - The emote type (happy, sad, anger, disappointment, or surprise)
+    
+    Return your response as JSON:
+    {{
+        "response_type": "respond_with_message"
+    }}
+    OR
+    {{
+        "response_type": "respond_with_emote",
+        "message": "Your message here that ends with showing emotion through facial expression",
+        "emote_type": "one of: happy, sad, anger, disappointment"
+    }}
+    
+    Map emotions like joy, delight, excitement to happy; frustration to anger; etc.
+    """
+    
+    decision_response = client.chat.completions.create(
+        model=model_version_extraction,
+        messages=[
+            {"role": "system", "content": "You are a decision-making assistant for an AI psychologist."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    
+    try:
+        decision_text = decision_response.choices[0].message.content
+        decision = extract_json_from_markdown(decision_text)
+        
+        try:
+            parsed_response = json.loads(decision)
+        except Exception as e:
+            print('Cannot parse JSON for deciding summarization', e)
+            return
+
+        print('Decision is: ', parsed_response)
+        return parsed_response
+    except Exception as e:
+        print(f"Error determining response type: {e}")
+        return {"response_type": "respond_with_message"}
+
 async def process_message(
     pc,
     user_text,
@@ -1754,26 +1808,66 @@ async def process_message(
                 emotion_context = format_emotion_data_for_llm(emotion_data)
                 user_prompt += "\n <EMOTION-DETECTION>:\n You are given the following emotional data from current user turn, use it accordingly: \n" + emotion_context + "<EMOTION-DETECTION-END>"
 
-        history.append({"role": "user", "content": user_prompt})
-        model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
-        chat_response = client.chat.completions.create(
-            model=model_ver,
-            messages=history
-        )
-        
-        assistant_text = chat_response.choices[0].message.content
-        print('psychologist response is: ', assistant_text)
-        visemes = generate_viseme_timings(assistant_text)
-        await websocket.send_json({
-            "type": "assistant_voice_message",
-            "text": assistant_text,
-            "visemes": visemes
-        })
-        history.append({"role": "assistant", "content": assistant_text})
-        
         if not isChat:
-            await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket)
+            response_decision = await determine_response_type(user_text)
+            if response_decision.get("response_type") == "respond_with_emote":
+                assistant_text = response_decision.get("message")
+                emote_type = response_decision.get("emote_type", "happy")
+
+                emotion_mapping = {
+                    "joy": "happy", "delight": "happy", "happiness": "happy", "excited": "happy",
+                    "frustration": "anger", "rage": "anger", "annoyed": "anger",
+                    "upset": "disappointment", "depressed": "sad",
+                    "shocked": "surprise", "amazed": "surprise"
+                }
+                
+                if emote_type in emotion_mapping:
+                    emote_type = emotion_mapping[emote_type]
+                    
+                # Ensure emote is one of our supported types
+                if emote_type not in ["happy", "sad", "anger", "disappointment", "surprise"]:
+                    emote_type = "happy"
+                    
+                history.append({"role": "user", "content": user_text})
+                history.append({"role": "assistant", "content": assistant_text})
+                
+                visemes = generate_viseme_timings(assistant_text)
+                await websocket.send_json({
+                    "type": "assistant_voice_message",
+                    "text": assistant_text,
+                    "visemes": visemes
+                })
+                
+                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, emote_type)
+            else:
+                history.append({"role": "user", "content": user_prompt})
+                model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+                chat_response = client.chat.completions.create(
+                    model=model_ver,
+                    messages=history
+                )
+                
+                assistant_text = chat_response.choices[0].message.content
+                visemes = generate_viseme_timings(assistant_text)
+                await websocket.send_json({
+                    "type": "assistant_voice_message",
+                    "text": assistant_text,
+                    "visemes": visemes
+                })
+                history.append({"role": "assistant", "content": assistant_text})
+
+                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket)
         else:
+            history.append({"role": "user", "content": user_prompt})
+            model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+            chat_response = client.chat.completions.create(
+                model=model_ver,
+                messages=history
+            )
+            
+            assistant_text = chat_response.choices[0].message.content
+            history.append({"role": "assistant", "content": assistant_text})
+
             return assistant_text
     except Exception as e:
         error_trace = traceback.format_exc()

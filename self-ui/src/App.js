@@ -44,7 +44,7 @@ const AVAILABLE_MODELS = [
 const DEFAULT_MODEL = AVAILABLE_MODELS[0];
 
 // --- Background Scene Component ---
-function BackgroundScene({ isTalking, assistantTalking, visemeSequence }) {
+function BackgroundScene({ isTalking, assistantTalking, visemeSequence, currentEmote }) {
 // function BackgroundScene({ isTalking, assistantTalking }) {
   return (
     <Canvas
@@ -64,7 +64,7 @@ function BackgroundScene({ isTalking, assistantTalking, visemeSequence }) {
       <ambientLight color="#ffffff" intensity={0.72} />
       <directionalLight color="#ffffff" position={[10, 7, 2]} intensity={3.2} />
       <Suspense fallback={null}>
-        <Model isPlaying={isTalking} assistantTalking={assistantTalking} visemeSequence={visemeSequence} />
+        <Model isPlaying={isTalking} assistantTalking={assistantTalking} visemeSequence={visemeSequence} currentEmote={currentEmote} />
         {/* <Model isPlaying={isTalking} assistantTalking={assistantTalking} /> */}
         <OrbitControls
           enableZoom={true}
@@ -314,6 +314,7 @@ function App() {
   const animationFrameIdRef = useRef(null);
   const [isWsOpen, toggleWsOpen] = useState(false);
   const [chatLoading, setChatLoading] = useState(true);
+  const [currentEmote, setCurrentEmote] = useState(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
@@ -673,6 +674,9 @@ function App() {
         setAssistantTalking(true);
       } else if (message.type === "FINISHED_TALK") {
         setAssistantTalking(false);
+        if (message.emote_type) {
+          setCurrentEmote(message.emote_type);
+        }
       } 
     };
 
@@ -1173,7 +1177,7 @@ function App() {
         height: "100vh",
       }}
     >
-      <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} />
+      <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote}  />
       {/* <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} /> */}
       <div style={{
           position: "absolute",
