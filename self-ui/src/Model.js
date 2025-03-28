@@ -21,6 +21,7 @@ function Model({
   const lastVisemeRef = useRef(null);
   const currentShapeKeyValuesRef = useRef({});
   const jawRootRef = useRef(null);
+  const stopAnimationTimeout = useRef(null);
 
   const prevEmoteRef = useRef(null);
 
@@ -382,19 +383,26 @@ function Model({
   
   // Animation control methods
   const startAnimation = () => {
-    if (!isAnimating) {
-      clockRef.current.start();
-      animationTimeRef.current = 0;
-      lastVisemeRef.current = null; // Reset last viseme
-      setIsAnimating(true);
-      
-      // Initialize current shape key values to defaults (typically zeros)
-      initializeShapeKeyValues();
 
-      if (!isPlayingRef.current) {
-        clockRef.current.stop();
-        isPausedRef.current = true;
+    if (isAnimating) {
+      if (stopAnimationTimeout.current) {
+        clearTimeout(stopAnimationTimeout.current)
+        stopAnimationTimeout.current = null
       }
+      stopAnimation();
+    }
+  
+    clockRef.current.start();
+    animationTimeRef.current = 0;
+    lastVisemeRef.current = null; // Reset last viseme
+    setIsAnimating(true);
+    
+    // Initialize current shape key values to defaults (typically zeros)
+    initializeShapeKeyValues();
+
+    if (!isPlayingRef.current) {
+      clockRef.current.stop();
+      isPausedRef.current = true;
     }
   };
 
@@ -531,6 +539,7 @@ function Model({
         currentAnimationRef.current.fadeOut(0.2);
         currentAnimationRef.current = null;
       }
+      console.log('Assistant talking, starting viseme animation')
       startAnimation();
       return;
     }
@@ -554,20 +563,18 @@ function Model({
       targetJawIndexRef.current = 0;
       
       // Let this sequence play for a short duration to reset everything
-      if (!isShowingEmotionRef.current) {
-        setTimeout(() => {
-          stopAnimation();
-          // Now play random animations
-          intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
-        }, 200); // Just enough time to animate to rest
-      }
+      stopAnimationTimeout.current = setTimeout(() => {
+        stopAnimation();
+        stopAnimationTimeout.current = null;
+        // Now play random animations
+        intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+      }, 200); // Just enough time to animate to rest
     } else {
       // If not initialized yet, just stop animation
       stopAnimation();
       resetAnimation();
       
       // Play random animations
-      playRandomAnimation(); // Play one immediately
       intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
     }
     // Cleanup function

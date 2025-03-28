@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense } from "react";
 import "./App.css";
 import LoginButton from "./components/LoginButton";
-import { useAuth } from "./auth/AuthContext";
+// import { useAuth } from "./auth/AuthContext";
 
 // React Three Fiber imports
 import { Canvas } from "@react-three/fiber";

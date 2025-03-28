@@ -272,14 +272,14 @@ if not encoded_key:
     raise ValueError("FIREBASE_SERVICE_ACCOUNT_KEY is not set in the environment.")
 
 # Decode the base64 string to get the original JSON string
-firebase_key_json = base64.b64decode(encoded_key).decode('utf-8')
-firebase_key_dict = json.loads(firebase_key_json)
+# firebase_key_json = base64.b64decode(encoded_key).decode('utf-8')
+# firebase_key_dict = json.loads(firebase_key_json)
 
 # Initialize credentials with the decoded JSON
-cred = credentials.Certificate(firebase_key_dict)
-firebase_admin.initialize_app(cred)
+# cred = credentials.Certificate(firebase_key_dict)
+# firebase_admin.initialize_app(cred)
 
-db = firestore.client()
+# db = firestore.client()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
@@ -1082,26 +1082,27 @@ async def websocket_endpoint(websocket: WebSocket):
             await peer_connections[session_id].close()
             del peer_connections[session_id]
 
-        try:
-            memory_enabled = get_memory_enabled(user['uid'])
-        except Exception as e:
-            memory_enabled = False
-        
-        if session_id in conversation_histories and len(conversation_histories[session_id]) > 3 and memory_enabled:
-            print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for conversation")
-            loop = asyncio.get_running_loop()
-            loop.run_in_executor(
-                executor, 
-                lambda: asyncio.run(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user['uid']))
-            )
+        if user:
+            try:
+                memory_enabled = get_memory_enabled(user['uid'])
+            except Exception as e:
+                memory_enabled = False
+            
+            if session_id in conversation_histories and len(conversation_histories[session_id]) > 3 and memory_enabled:
+                print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for conversation")
+                loop = asyncio.get_running_loop()
+                loop.run_in_executor(
+                    executor, 
+                    lambda: asyncio.run(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user['uid']))
+                )
 
-        if session_id in chat_histories and len(chat_histories[session_id]) > 3 and memory_enabled:
-            print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for chat")
-            loop = asyncio.get_running_loop()
-            loop.run_in_executor(
-                executor,
-                lambda: asyncio.run(finalize_conversation(copy.deepcopy(chat_histories[session_id]), user['uid']))
-            )
+            if session_id in chat_histories and len(chat_histories[session_id]) > 3 and memory_enabled:
+                print(f"Finalizing conversation for session {session_id} due to WebSocket disconnect for chat")
+                loop = asyncio.get_running_loop()
+                loop.run_in_executor(
+                    executor,
+                    lambda: asyncio.run(finalize_conversation(copy.deepcopy(chat_histories[session_id]), user['uid']))
+                )
             
         if session_id in session_states:
             session_state = session_states[session_id]
@@ -1266,7 +1267,6 @@ async def finalize_conversation(
     conversation,
     userId
 ):
-    print('calling finalize conv')
     namespace = "user-memories"
     filtered_messages = []
     for msg in conversation:
@@ -1697,36 +1697,36 @@ def clean_message_content(content):
 
 # Router based agent
 async def determine_response_type(user_text):
-    """Determines whether to respond with a regular message or with an emote."""
     prompt = f"""
-    Based on the user message: "{user_text}"
+    Based on the user message: "{user_text}". The AI psychologist that is embodied through an AI avatar can show expressions or engage with the user verbally.
+    Your goal is to decide which of these two are going to happen and return the appropriate JSON to indicate this.
     
-    Decide if you should:
-    1. Respond with a regular message
-    2. Respond with a facial expression message type
+    Here are the choices:
+    1. Express facial expression emote - this will not reach the AI psychologist so be really careful when you express emotion.
+    2. Route to the AI psychologist for engaging.
     
-    If responding with facial expression message type, you must specify:
-    - A message that encourages the user about your ability to show the specific emotion through the facial expression at the end of the sentence
-    - The emote type (happy, sad, anger, disappointment, or surprise)
+    If you choose to express facial expression emote, follow these guidelines:
+    - Provide a message that encourages the user about avatar ability to show the specific emotion through the facial expression at the end of the sentence.
+    - The emote type (happy, sad, anger, or disappointment).
+    - No other emotes should be choosed but the ones specified above.
     
     Return your response as JSON:
     {{
-        "response_type": "respond_with_message"
+        "response_type": "route_to_ai_psychologist"
     }}
     OR
     {{
-        "response_type": "respond_with_emote",
+        "response_type": "express_emote",
         "message": "Your message here that ends with showing emotion through facial expression",
-        "emote_type": "one of: happy, sad, anger, disappointment"
+        "emote_type": "one of: happy, sad, anger, or disappointment"
     }}
-    
-    Map emotions like joy, delight, excitement to happy; frustration to anger; etc.
+    Provide only the JSON and nothing else.
     """
     
     decision_response = client.chat.completions.create(
         model=model_version_extraction,
         messages=[
-            {"role": "system", "content": "You are a decision-making assistant for an AI psychologist."},
+            {"role": "system", "content": "You are a decision-making assistant for an AI psychologist processing pipeline."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -1807,10 +1807,11 @@ async def process_message(
             if emotion_data.get("facial") or emotion_data.get("vocal"):
                 emotion_context = format_emotion_data_for_llm(emotion_data)
                 user_prompt += "\n <EMOTION-DETECTION>:\n You are given the following emotional data from current user turn, use it accordingly: \n" + emotion_context + "<EMOTION-DETECTION-END>"
+                print('Emotional context:', emotion_context)
 
         if not isChat:
             response_decision = await determine_response_type(user_text)
-            if response_decision.get("response_type") == "respond_with_emote":
+            if response_decision.get("response_type") == "express_emote":
                 assistant_text = response_decision.get("message")
                 emote_type = response_decision.get("emote_type", "happy")
 
