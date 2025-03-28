@@ -22,7 +22,7 @@ function Model({
   const currentShapeKeyValuesRef = useRef({});
   const jawRootRef = useRef(null);
   const stopAnimationTimeout = useRef(null);
-
+  const restartIntervalAfterEmote = useRef(null);
   const prevEmoteRef = useRef(null);
 
   const currentAnimationRef = useRef(null);
@@ -32,8 +32,6 @@ function Model({
 
   const isPlayingRef = useRef(isPlaying);
   const isPausedRef = useRef(false);
-
-  const isShowingEmotionRef = useRef(false);
   
   // Initialize jaw movement quaternion sequence
   const jawMovementVectorRef = useRef([]);
@@ -527,9 +525,18 @@ function Model({
     // }
   
     // Clear any existing interval
-    if (intervalRef.current) {
+    if (assistantTalking && intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+    }
+
+    if (assistantTalking && restartIntervalAfterEmote.current) {
+      clearTimeout(restartIntervalAfterEmote.current)
+      restartIntervalAfterEmote.current = null
+    }
+
+    if (assistantTalking && prevEmoteRef.current) {
+      prevEmoteRef.current = null
     }
     
     // If assistant is talking, stop any current animation
@@ -567,7 +574,9 @@ function Model({
         stopAnimation();
         stopAnimationTimeout.current = null;
         // Now play random animations
-        intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+        if (!intervalRef.current) {
+          intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+        }
       }, 200); // Just enough time to animate to rest
     } else {
       // If not initialized yet, just stop animation
@@ -575,7 +584,9 @@ function Model({
       resetAnimation();
       
       // Play random animations
-      intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(playRandomAnimation, 15000); // Then every 15 seconds
+      }
     }
     // Cleanup function
     return () => {
@@ -893,11 +904,11 @@ function Model({
   useEffect(() => {
     // Only trigger when currentEmote changes from previous value, 
     // is not null, and assistant is not talking
+    console.log('current emote is:', currentEmote)
+    console.log('prev emote is:', prevEmoteRef.current)
     if (currentEmote && 
         prevEmoteRef.current !== currentEmote && 
         !assistantTalking) {
-
-      isShowingEmotionRef.current = true;
       
       // Store current emote in ref to track changes
       prevEmoteRef.current = currentEmote;
@@ -913,7 +924,7 @@ function Model({
         currentAnimationRef.current.fadeOut(0.2);
         currentAnimationRef.current = null;
       }
-
+      console.log('Current emote is', currentEmote)
       // Play the appropriate animation based on emote type
       switch (currentEmote) {
         case 'happy': {
@@ -944,10 +955,10 @@ function Model({
       }
       
       // Restart interval animations after a delay
-      setTimeout(() => {
-        isShowingEmotionRef.current = false;
-        if (!assistantTalking && !currentAnimationRef.current) {
-          playRandomAnimation(); // Restart random animations
+      restartIntervalAfterEmote.current = setTimeout(() => {
+        restartIntervalAfterEmote.current = null
+        prevEmoteRef.current = null
+        if (!assistantTalking && !intervalRef.current) {
           intervalRef.current = setInterval(playRandomAnimation, 15000);
         }
       }, 5000); // 5 seconds delay after emotion
