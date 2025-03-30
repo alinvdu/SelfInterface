@@ -806,12 +806,12 @@ function App() {
           }).then(res => res.json());
 
             // Start fetchConversationHistory (assumed to be async and handle its own state)
-            // const historyPromise = token ? fetchConversationHistory() : Promise.resolve();
+            const historyPromise = token ? fetchConversationHistory() : Promise.resolve();
 
             // Wait for both to complete
-            const [newSessionData] = await Promise.all([newSessionPromise]);
+            const [newSessionData] = await Promise.all([newSessionPromise, historyPromise]);
 
-            // setChatLoading(false);
+            setChatLoading(false);
 
             // Set sessionId and create WebSocket connection
             setSessionId(newSessionData.session_id);
@@ -833,15 +833,14 @@ function App() {
       try {
         if (token) {
           fetchMemories();
+          const prefsRes = await fetch(`${api}/user_preferences`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const prefsData = await prefsRes.json();
 
-          // const prefsRes = await fetch(`${api}/user_preferences`, {
-          //   headers: { Authorization: `Bearer ${token}` }
-          // });
-          // const prefsData = await prefsRes.json();
-
-          // setIsMemoryEnabled(prefsData.memory_enabled !== false); // Default to true if not set
-          // setIsChatEnabled(prefsData.chat_enabled !== false); // Default to true if not set
-          // setLoadingPreferences(false);
+          setIsMemoryEnabled(prefsData.memory_enabled !== false); // Default to true if not set
+          setIsChatEnabled(prefsData.chat_enabled !== false); // Default to true if not set
+          setLoadingPreferences(false);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
