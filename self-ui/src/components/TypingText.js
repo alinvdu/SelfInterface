@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-const TypingText = ({ texts, colors, typingSpeed = 100, eraseSpeed = 60, pauseTime = 1500 }) => {
+const TypingText = ({ texts, colors, typingSpeed = 100, eraseSpeed = 60, pauseTime = 1500, fontSize = 35 }) => {
   const [currentTextIndex, setCurrentTextIndex] = useState(0);
   const [displayedText, setDisplayedText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -36,7 +36,7 @@ const TypingText = ({ texts, colors, typingSpeed = 100, eraseSpeed = 60, pauseTi
 
   return (
     <div style={{
-      fontSize: '35px',
+      fontSize: `${fontSize}px`,
       color: textColor,
       display: 'inline-block',
       fontWeight: "bold"

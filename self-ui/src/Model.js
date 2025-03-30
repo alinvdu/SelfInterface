@@ -10,7 +10,10 @@ function Model({
   visemeSequence = null,
   assistantTalking,
   isPlaying = false,
-  currentEmote = null
+  currentEmote = null,
+  setCurrentEmote = () => {},
+  introPosition = false,
+  onLoad
 }) {
   const { scene, animations } = useGLTF('/assets/ai-modern-psychologist.glb');
   const { actions } = useAnimations(animations, scene);
@@ -41,6 +44,13 @@ function Model({
   const targetJawIndexRef = useRef(0);
   // Track movement speed - how many indices to move per frame
   const jawMovementSpeedRef = useRef(1);
+
+  useEffect(() => {
+    // Call onLoad when the scene and animations are loaded and initialization is complete
+    if (onLoad && scene && animations.length > 0) {
+      onLoad();
+    }
+  }, [scene, animations, onLoad]);
   
   // Initialize the jaw movement vector with the sequence data from the pasted quaternions
   const initializeJawMovementVector = () => {
@@ -120,7 +130,6 @@ function Model({
     });
     
     jawMovementVectorRef.current = sequence;
-    console.log("Jaw movement vector initialized with", sequence.length, "entries");
   };
 
   // Viseme definitions with their bone and shape key targets
@@ -546,7 +555,7 @@ function Model({
         currentAnimationRef.current.fadeOut(0.2);
         currentAnimationRef.current = null;
       }
-      console.log('Assistant talking, starting viseme animation')
+
       startAnimation();
       return;
     }
@@ -665,8 +674,6 @@ function Model({
     });
     
     initialized.current = true;
-    console.log("Model initialized with shape keys:", Object.keys(shapeKeyMeshesRef.current));
-    console.log("Jaw movement vector length:", jawMovementVectorRef.current.length);
   }, [scene]);
 
   // Find the current viseme based on time
@@ -904,8 +911,6 @@ function Model({
   useEffect(() => {
     // Only trigger when currentEmote changes from previous value, 
     // is not null, and assistant is not talking
-    console.log('current emote is:', currentEmote)
-    console.log('prev emote is:', prevEmoteRef.current)
     if (currentEmote && 
         prevEmoteRef.current !== currentEmote && 
         !assistantTalking) {
@@ -924,7 +929,7 @@ function Model({
         currentAnimationRef.current.fadeOut(0.2);
         currentAnimationRef.current = null;
       }
-      console.log('Current emote is', currentEmote)
+
       // Play the appropriate animation based on emote type
       switch (currentEmote) {
         case 'happy': {
@@ -953,20 +958,25 @@ function Model({
           // No specific emotion
           break;
       }
+
+      prevEmoteRef.current = null
+      setCurrentEmote(null)
       
       // Restart interval animations after a delay
       restartIntervalAfterEmote.current = setTimeout(() => {
         restartIntervalAfterEmote.current = null
-        prevEmoteRef.current = null
         if (!assistantTalking && !intervalRef.current) {
           intervalRef.current = setInterval(playRandomAnimation, 15000);
         }
       }, 5000); // 5 seconds delay after emotion
     }
   }, [currentEmote, assistantTalking, actions]);
-
   return (
-    <group position={[0, -0.149, 0]}>
+    <group position={[
+      0,
+      -0.149, 
+      0
+    ]}>
       <primitive object={scene} dispose={null} />
     </group>
   );

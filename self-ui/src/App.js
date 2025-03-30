@@ -1,16 +1,11 @@
 import React, { useState, useEffect, useRef, Suspense, memo } from "react";
 import "./App.css";
-import LoginButton from "./components/LoginButton";
 import { useAuth } from "./auth/AuthContext";
 import { GiBrain } from "react-icons/gi";
-import { MdOutlinePsychology } from "react-icons/md";
-import { BiConversation } from "react-icons/bi";
-
+import { FiBox } from "react-icons/fi";
 
 import { motion, AnimatePresence } from "framer-motion"; // You'll need to install framer-motion
-import { BsArrowRight } from "react-icons/bs";
-import { FiInfo } from "react-icons/fi";
-import { RiEmotionHappyLine } from "react-icons/ri";
+import { RxAvatar } from "react-icons/rx";
 
 // React Three Fiber imports
 import { Canvas } from "@react-three/fiber";
@@ -33,11 +28,12 @@ import Switch from "./components/Switch.js";
 import { FiUser } from "react-icons/fi";
 import LoadingDots from "./components/LoadingDots.js";
 import { useProgress } from "@react-three/drei";
-import IntroductionPanel from "./components/IntroductionPanel.js";
+import Overlay from "./components/Overlay.js";
+import { BsArrowRight } from "react-icons/bs";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
-const api = "http://localhost:8000";
+const api = "https://selfai.live";
 
 const AVAILABLE_MODELS = [
   {
@@ -55,12 +51,36 @@ const AVAILABLE_MODELS = [
 const DEFAULT_MODEL = AVAILABLE_MODELS[0];
 
 function ModelLoader() {
-  const { progress } = useProgress();
-  
   return (
     <div className="model-loader-container">
       <div className="model-loader-content">
-        <LoadingDots />
+      <div style={{
+        position: "relative"
+      }}>
+        <LoadingDiv
+            isLoading 
+            duration={0.75} 
+            width={`${45}px`}
+            height={`${45}px`}
+            borderWidth={2}
+            loadingColor="#FFFFFF"
+            borderColor="rgba(255, 255, 255, 0.5)"
+            borderRadius={`${10}px`}
+            backgroundColor="transparent"
+            loadingSegmentPercentage={25}
+        />
+        <FiBox style={{
+          fontSize: 25,
+          position: "absolute",
+          top: 10,
+          left: 10,
+          animation: "spin 4s linear infinite"
+        }} />
+      </div>
+      <span style={{
+        fontSize: 17,
+        marginTop: 15
+      }}>Loading Model...</span>
       </div>
     </div>
   );
@@ -74,7 +94,8 @@ function BackgroundScene({
   setCurrentEmote, 
   isIntroMode = false,
   onModelLoaded,
-  isModelVisible=true
+  isModelVisible=true,
+  isSmallSize=false
 }) {
   return (
     <Canvas
@@ -82,7 +103,7 @@ function BackgroundScene({
         position: "fixed",
         top: 0,
         right: 0,
-        width: isIntroMode ? "45%" : "100%",
+        width: isIntroMode ? isSmallSize ? "0%" : "45%" : "100%",
         height: "100%",
         background: "transparent",
         zIndex: 0,
@@ -370,6 +391,7 @@ function App() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
   const isSmallSize = windowWidth < 1200;
+  const smallerThan850 = windowWidth < 850;
   const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
   const [isMemoryExpanded, toggleMemoryExpanded] = useState(false)
 
@@ -378,7 +400,8 @@ function App() {
   const [isTogglingMemory, setIsTogglingMemory] = useState(false);
   const [isTogglingChat, setIsTogglingChat] = useState(false);
   const [loadingPreferences, setLoadingPreferences] = useState(true);
-  const [userVoiceMessage, setUserVoiceMessage] = useState(null);
+  const [userVoiceMessage, setUserVoiceMessage] = useState("");
+  // const [assistantMessage, setAssistantVoiceMessage] = useState("I can see from your facial expressions and your voice that you are in a good mood! I think it would be perfect for us to explore ");
   const [assistantMessage, setAssistantVoiceMessage] = useState(null);
   const [latestMessageType, setLatestMessageType] = useState(null);
 
@@ -394,60 +417,13 @@ function App() {
   const [isModelVisible, setIsModelVisible] = useState(true);
 
   const [showIntroMode, setShowIntroMode] = useState(false);
-  const [isFirstVisit, setIsFirstVisit] = useState(false);
-  const [introScrollPosition, setIntroScrollPosition] = useState(0);
-  const [introSectionsVisible, setIntroSectionsVisible] = useState({
-    section1: true,
-    section2: false,
-    section3: false
-  });
-
-  useEffect(() => {
-    const hasVisitedBefore = localStorage.getItem("selfai_has_visited1");
-    
-    if (!hasVisitedBefore) {
-      setIsFirstVisit(true);
-      setShowIntroMode(true);
-    }
-  }, []);
-
-  const handleIntroScroll = (e) => {
-    const scrollPosition = e.target.scrollTop;
-    setIntroScrollPosition(scrollPosition);
-    
-    // Trigger section visibility based on scroll position
-    if (scrollPosition > 50) {
-      setIntroSectionsVisible(prev => ({ ...prev, section2: true }));
-    }
-    
-    if (scrollPosition > 250) {
-      setIntroSectionsVisible(prev => ({ ...prev, section3: true }));
-    }
-  };
+  const [showLoginView, setShowLoginView] = useState(false);
+  const [showCreateAccount, setShowCreateAccount] = useState(false);
 
   const handleStartApp = () => {
     setIsModelVisible(false)
     setTimeout(() => {
       setShowIntroMode(false);
-    }, 50)
-    setTimeout(() => {
-      setIsModelVisible(true)
-    }, 200);
-    
-    // Auto-start a call after a brief delay to allow the transition to complete
-    setTimeout(() => {
-      if (!conversing && !calling) {
-        // toggleExpandChat(false);
-        // setPhoneCalling(true);
-        // initiateWebRTC(false); // Start an audio call
-      }
-    }, 800);
-  };
-
-  const handleOpenIntroMode = () => {
-    setIsModelVisible(false)
-    setTimeout(() => {
-      setShowIntroMode(true);
     }, 50)
     setTimeout(() => {
       setIsModelVisible(true)
@@ -817,6 +793,10 @@ function App() {
   // Combined new_session and proactive message call.
   useEffect(() => {
     if (!loading) {
+      if (!token) {
+        setShowIntroMode(true);
+      }
+
       const createSession = async () => {
         if (!sessionId) {
           try {
@@ -1205,10 +1185,10 @@ function App() {
     if (isMobile) {
       return {
         ...commonStyles,
-        top: 280,
+        bottom: 200,
         left: 20,
-        width: 160,
-        height: 160
+        width: 120,
+        height: 120
       }
     }
 
@@ -1234,13 +1214,12 @@ function App() {
 
     return {
       ...commonStyles,
-      bottom: 150,
-      right: 20,
+      bottom: 280,
+      right: 250,
       width: 280,
       height: 170
     }
   }
-  
   // Function to render assistant message
   const renderAssistantMessage = (key) => (
     <div style={{
@@ -1289,10 +1268,107 @@ function App() {
       {modelLoading && <ModelLoader />}
       {modelLoaded && (
         <AnimatePresence>
-          {showIntroMode && <IntroductionPanel handleIntroScroll={handleIntroScroll} introSectionsVisible={introSectionsVisible} handleStartApp={handleStartApp} />}
+          {showIntroMode && <Overlay smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
+            setShowCreateAccount(false)
+            setShowLoginView(true)
+          }} toggleCreateAccountView={() => {
+            setShowLoginView(false)
+            setShowCreateAccount(true)
+          }} navigateBack={() => {
+            setShowCreateAccount(false);
+            setShowLoginView(false);
+          }} />}
         </AnimatePresence>
       )}
-      <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
+      <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
+      {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
+        position: "absolute",
+        top: smallerThan850 ? 28 : 35,
+        right: smallerThan850 ? 15 : 50,
+        fontSize: 19,
+        color: 'rgba(255, 255, 255, 1)',
+        opacity: 0.85,
+        cursor: 'pointer'
+      }}
+      onMouseOver={e => {
+        e.currentTarget.style.opacity = 1
+        e.currentTarget.style.transform = "scale(1.05)";
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.opacity = 0.85
+        e.currentTarget.style.transform = "scale(1)";
+      }}
+      onClick={() => {
+        setShowLoginView(true)
+      }}
+      >
+        Log In
+      </div> : <div style={{
+        position: "absolute",
+        top: smallerThan850 ? 22 : 35,
+        right: 50,
+        fontSize: 19,
+        color: 'rgba(255, 255, 255, 1)',
+        opacity: 0.85,
+        cursor: 'pointer',
+        display: "flex"
+      }}
+      >
+        {!smallerThan850 && 
+        <><div style={{
+          marginRight: 15
+        }}>
+          Hello {user.displayName || user.email}
+        </div>
+        <div style={{
+          marginRight: 15
+        }}>
+          |
+        </div></>}
+        <div style={{
+          
+        }}
+        onMouseOver={e => {
+          e.currentTarget.style.opacity = 1
+          e.currentTarget.style.transform = "scale(1.05)";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.opacity = 0.85
+          e.currentTarget.style.transform = "scale(1)";
+        }}
+        onClick={logout}
+        >
+        Log Out
+        </div>
+        <div style={{
+          marginLeft: 25,
+          display: "flex",
+          alignItems: "center"
+        }}
+        onMouseOver={e => {
+          e.currentTarget.style.opacity = 1
+          e.currentTarget.style.transform = "scale(1.05)";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.opacity = 0.85
+          e.currentTarget.style.transform = "scale(1)";
+        }}
+        onClick={() => {
+          setIsModelVisible(false)
+          setTimeout(() => {
+            setShowIntroMode(false);
+          }, 50)
+          setTimeout(() => {
+            setIsModelVisible(true)
+            }, 200);
+        }}
+        >
+          <span>Back</span>
+          <BsArrowRight style={{
+            marginLeft: 5
+          }} />
+        </div>
+      </div> : null}
       {/* <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} /> */}
       {!showIntroMode && modelLoaded && (
       <>
@@ -1323,28 +1399,6 @@ function App() {
               <div>Self AI</div>
             </div>
         </div>
-        {!isMobile && <div style={{
-            position: "absolute",
-            bottom: "16px",
-            right: "16px",
-            zIndex: 2,
-            background: 'rgba(0, 0, 0, 0.25)',
-            "backdrop-filter": "blur(8px)",
-            "-webkit-backdrop-filter": "blur(8px)",
-            border: "1px solid rgba(255, 255, 255, 0.35)",
-            borderRadius: "26px",
-            color: "white",
-            fontSize: "23px",
-            width: 100,
-            height: 50,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}>
-            <div style={{display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
-              <div style={{fontSize: 14}}>v0.1 Beta</div>
-            </div>
-        </div>}
         <div
           ref={modelDropdownRef}
           style={{
@@ -1514,20 +1568,49 @@ function App() {
         <div
           style={{
             position: "absolute",
-            top: "16px",
+            top: token ? "16px" : "22px",
             right: "16px",
             zIndex: 2,
-            background: 'rgba(0, 0, 0, 0.25)',
+            background: token ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)',
             "backdrop-filter": "blur(15px)",
             "-webkit-backdrop-filter": "blur(15px)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
             borderRadius: "26px",
-            padding: isMobile ? 9 : "15px",
             color: "white",
-            fontSize: 17
+            fontSize: 17,
+            height: token ? 62 : 45,
+            boxSizing: "border-box",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            padding: "0 16px"
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          onClick={() => {
+            setIsModelVisible(false)
+            setTimeout(() => {
+              setShowIntroMode(true);
+            }, 50)
+            setTimeout(() => {
+              setIsModelVisible(true)
+            }, 200);
+
+            if (!token) {
+              setShowCreateAccount(true);
+            }
           }}
         >
-          <LoginButton isMobile={isMobile} signInWithGoogle={signInWithGoogle} logout={logout} />
+          {token && <RxAvatar style={{
+            fontSize: 30,
+            color: "white"
+          }} />}
+          {!token ? <div style={{ color: "black", fontSize: 15, fontWeight: "bold"}}>Create Account</div> : null}
         </div>}
         <div style={{
           position: "absolute",
@@ -1536,7 +1619,8 @@ function App() {
           bottom: isMobile ? "100px" : "20px",
           display: "flex",
           flexDirection: "column",
-          minHeight: 0
+          minHeight: 0,
+          marginTop: isMobile && !isChatExpanded && !isMemoryExpanded ? "50%" : 0
         }}>
             <CollapsibleMemoriesPanel
               token={token}

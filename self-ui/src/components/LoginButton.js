@@ -2,12 +2,7 @@ import React from "react";
 import { useAuth } from "./../auth/AuthContext";
 
 const LoginButton = ({ isMobile }) => {
-  // const { user, signInWithGoogle, logout } = useAuth();
-  const { user, signInWithGoogle, logout } = {
-    user: undefined,
-    signInWithGoogle: () => {},
-    logout: () => {}
-  }
+  const { user, signInWithGoogle, logout } = useAuth();
 
   return (
     <div>

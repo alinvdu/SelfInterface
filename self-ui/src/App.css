@@ -3,7 +3,7 @@ body {
   background-size: cover;
   background-repeat: no-repeat;
   background-position: 0% 0%;
-  background-color: black;
+  background-color: rgb(55, 55, 55);
   /* background-position: 0% 60%; */
 }
 
@@ -221,7 +221,7 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(15, 15, 15, 0.95);
+  background-color: rgba(15, 15, 15, 0.55);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -252,5 +252,15 @@ body {
   51%,
   100% {
     opacity: 0;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
