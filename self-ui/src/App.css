@@ -3,6 +3,7 @@ body {
   background-size: cover;
   background-repeat: no-repeat;
   background-position: 0% 0%;
+  background-color: rgb(55, 55, 55);
   /* background-position: 0% 60%; */
 }
 
@@ -93,4 +94,173 @@ body {
 
 .callOptionsDropdown {
   animation: fadeInUp 0.3s ease-out forwards;
+}
+
+.introduction-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(0, 0, 0, 0);
+}
+
+.introduction-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.introduction-panel::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0);
+}
+
+.introduction-panel::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+}
+
+/* Animations */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+  }
+
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+  }
+}
+
+.pulse-animation {
+  animation: pulse 2s infinite;
+}
+
+/* Slide transitions */
+.slide-in {
+  animation: slideIn 0.5s forwards;
+}
+
+.slide-out {
+  animation: slideOut 0.5s forwards;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* Fade transitions */
+.fade-in {
+  animation: fadeIn 0.5s forwards;
+}
+
+.fade-out {
+  animation: fadeOut 0.5s forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* Intro section transitions */
+.intro-section {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.intro-section.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Model position transition */
+.model-container {
+  transition: transform 0.6s ease-in-out;
+}
+
+.model-container.intro-mode {
+  transform: translateX(15%);
+}
+
+.model-loader-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(15, 15, 15, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.model-loader-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: white;
+}
+
+.cursor {
+  display: inline-block;
+  animation: blinkCursor 0.7s infinite;
+}
+
+@keyframes blinkCursor {
+
+  0%,
+  50% {
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }

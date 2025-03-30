@@ -272,14 +272,14 @@ if not encoded_key:
     raise ValueError("FIREBASE_SERVICE_ACCOUNT_KEY is not set in the environment.")
 
 # Decode the base64 string to get the original JSON string
-# firebase_key_json = base64.b64decode(encoded_key).decode('utf-8')
-# firebase_key_dict = json.loads(firebase_key_json)
+firebase_key_json = base64.b64decode(encoded_key).decode('utf-8')
+firebase_key_dict = json.loads(firebase_key_json)
 
 # Initialize credentials with the decoded JSON
-# cred = credentials.Certificate(firebase_key_dict)
-# firebase_admin.initialize_app(cred)
+cred = credentials.Certificate(firebase_key_dict)
+firebase_admin.initialize_app(cred)
 
-# db = firestore.client()
+db = firestore.client()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
@@ -1903,22 +1903,6 @@ async def retrieve_memories(user: dict = Depends(verify_token)):
     memories.sort(key=lambda x: x["timestamp"], reverse=True)
 
     return JSONResponse(content={"memories": memories})
-
-def get_user_conversations(user_id):
-    """Retrieves all conversations for a given user ID."""
-    if not user_id:
-        raise HTTPException(status_code=400, detail="User ID is required")
-
-    try:
-        conversations_ref = db.collection("users")
-        query_ref = conversations_ref.where("userId", "==", user_id)
-        docs = query_ref.stream()
-        conversations = [doc.to_dict() for doc in docs]
-        return conversations
-    except Exception as e:
-        print(f"Error fetching conversations: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching conversations")
-
 
 @app.get("/user_conversations")
 async def user_conversations_endpoint(user: dict = Depends(verify_token)):

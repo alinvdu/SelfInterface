@@ -1,7 +1,11 @@
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense, memo } from "react";
 import "./App.css";
-import LoginButton from "./components/LoginButton";
-// import { useAuth } from "./auth/AuthContext";
+import { useAuth } from "./auth/AuthContext";
+import { GiBrain } from "react-icons/gi";
+import { FiBox } from "react-icons/fi";
+
+import { motion, AnimatePresence } from "framer-motion"; // You'll need to install framer-motion
+import { RxAvatar } from "react-icons/rx";
 
 // React Three Fiber imports
 import { Canvas } from "@react-three/fiber";
@@ -23,6 +27,9 @@ import Switch from "./components/Switch.js";
 
 import { FiUser } from "react-icons/fi";
 import LoadingDots from "./components/LoadingDots.js";
+import { useProgress } from "@react-three/drei";
+import Overlay from "./components/Overlay.js";
+import { BsArrowRight } from "react-icons/bs";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
@@ -43,33 +50,90 @@ const AVAILABLE_MODELS = [
 
 const DEFAULT_MODEL = AVAILABLE_MODELS[0];
 
-// --- Background Scene Component ---
-function BackgroundScene({ isTalking, assistantTalking, visemeSequence, currentEmote }) {
-// function BackgroundScene({ isTalking, assistantTalking }) {
+function ModelLoader() {
+  return (
+    <div className="model-loader-container">
+      <div className="model-loader-content">
+      <div style={{
+        position: "relative"
+      }}>
+        <LoadingDiv
+            isLoading 
+            duration={0.75} 
+            width={`${45}px`}
+            height={`${45}px`}
+            borderWidth={2}
+            loadingColor="#FFFFFF"
+            borderColor="rgba(255, 255, 255, 0.5)"
+            borderRadius={`${10}px`}
+            backgroundColor="transparent"
+            loadingSegmentPercentage={25}
+        />
+        <FiBox style={{
+          fontSize: 25,
+          position: "absolute",
+          top: 10,
+          left: 10,
+          animation: "spin 4s linear infinite"
+        }} />
+      </div>
+      <span style={{
+        fontSize: 17,
+        marginTop: 15
+      }}>Loading Model...</span>
+      </div>
+    </div>
+  );
+}
+
+function BackgroundScene({ 
+  isTalking, 
+  assistantTalking, 
+  visemeSequence, 
+  currentEmote, 
+  setCurrentEmote, 
+  isIntroMode = false,
+  onModelLoaded,
+  isModelVisible=true,
+  isSmallSize=false
+}) {
   return (
     <Canvas
       style={{
         position: "fixed",
         top: 0,
-        left: 0,
-        width: "100%",
+        right: 0,
+        width: isIntroMode ? isSmallSize ? "0%" : "45%" : "100%",
         height: "100%",
         background: "transparent",
         zIndex: 0,
         pointerEvents: "auto",
       }}
-      camera={{ position: [0.09, 0.012, 0], fov: 60, near: 0.001 }}
+      camera={{ 
+        position: [0.09, 0.012, 0], // Adjust camera position for intro mode
+        fov: 60, 
+        near: 0.001 
+      }}
       gl={{ alpha: true }}
     >
-      <ambientLight color="#ffffff" intensity={0.72} />
-      <directionalLight color="#ffffff" position={[10, 7, 2]} intensity={3.2} />
+      <ambientLight color="#ffffff" intensity={isIntroMode ? 0.62 : 0.72} />
+      <directionalLight color="#ffffff" position={[10, 7, 2]} intensity={isIntroMode ? 2.95 : 3.2} />
       <Suspense fallback={null}>
-        <Model isPlaying={isTalking} assistantTalking={assistantTalking} visemeSequence={visemeSequence} currentEmote={currentEmote} />
-        {/* <Model isPlaying={isTalking} assistantTalking={assistantTalking} /> */}
+        {isModelVisible && (
+          <Model 
+            isPlaying={isTalking} 
+            assistantTalking={assistantTalking} 
+            visemeSequence={visemeSequence} 
+            currentEmote={currentEmote} 
+            setCurrentEmote={setCurrentEmote} 
+            introPosition={isIntroMode}
+            onLoad={onModelLoaded}
+          />
+        )}
         <OrbitControls
-          enableZoom={true}
-          enableRotate={true}
-          enablePan={true}
+          enableZoom={false}
+          enableRotate={false}
+          enablePan={false}
         />
       </Suspense>
     </Canvas>
@@ -77,6 +141,14 @@ function BackgroundScene({ isTalking, assistantTalking, visemeSequence, currentE
 }
 
 function App() {
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [modelLoading, setModelLoading] = useState(true);
+  
+  const handleModelLoaded = () => {
+    setModelLoaded(true);
+    setModelLoading(false);
+  };
+
   // Audio context and oscillator refs
   const audioContextRef = useRef(null);
 
@@ -296,12 +368,12 @@ function App() {
     ));
   };
 
-  // const { token, user, loading } = useAuth()
-  const { token, user, loading } = {
-    token: null,
-    user: null,
-    loading: false
-  }
+  const { token, user, loading, signInWithGoogle, logout } = useAuth()
+  // const { token, user, loading } = {
+  //   token: null,
+  //   user: null,
+  //   loading: false
+  // }
   const [isTalking, setIsTalking] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [memories, setMemories] = useState([]);
@@ -319,6 +391,7 @@ function App() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
   const isSmallSize = windowWidth < 1200;
+  const smallerThan850 = windowWidth < 850;
   const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
   const [isMemoryExpanded, toggleMemoryExpanded] = useState(false)
 
@@ -327,7 +400,8 @@ function App() {
   const [isTogglingMemory, setIsTogglingMemory] = useState(false);
   const [isTogglingChat, setIsTogglingChat] = useState(false);
   const [loadingPreferences, setLoadingPreferences] = useState(true);
-  const [userVoiceMessage, setUserVoiceMessage] = useState(null);
+  const [userVoiceMessage, setUserVoiceMessage] = useState("");
+  // const [assistantMessage, setAssistantVoiceMessage] = useState("I can see from your facial expressions and your voice that you are in a good mood! I think it would be perfect for us to explore ");
   const [assistantMessage, setAssistantVoiceMessage] = useState(null);
   const [latestMessageType, setLatestMessageType] = useState(null);
 
@@ -340,6 +414,21 @@ function App() {
   const [visemes, setVisemes] = useState();
 
   const modelDropdownRef = useRef(null);
+  const [isModelVisible, setIsModelVisible] = useState(true);
+
+  const [showIntroMode, setShowIntroMode] = useState(false);
+  const [showLoginView, setShowLoginView] = useState(false);
+  const [showCreateAccount, setShowCreateAccount] = useState(false);
+
+  const handleStartApp = () => {
+    setIsModelVisible(false)
+    setTimeout(() => {
+      setShowIntroMode(false);
+    }, 50)
+    setTimeout(() => {
+      setIsModelVisible(true)
+    }, 200);
+  };
 
   useEffect(() => {
     assistantTalkingRef.current = assistantTalking
@@ -704,6 +793,10 @@ function App() {
   // Combined new_session and proactive message call.
   useEffect(() => {
     if (!loading) {
+      if (!token) {
+        setShowIntroMode(true);
+      }
+
       const createSession = async () => {
         if (!sessionId) {
           try {
@@ -718,11 +811,7 @@ function App() {
             // Wait for both to complete
             const [newSessionData] = await Promise.all([newSessionPromise, historyPromise]);
 
-            if (token) {
-              fetchConversationHistory();
-            } else {
-              setChatLoading(false);
-            }
+            setChatLoading(false);
 
             // Set sessionId and create WebSocket connection
             setSessionId(newSessionData.session_id);
@@ -744,7 +833,6 @@ function App() {
       try {
         if (token) {
           fetchMemories();
-
           const prefsRes = await fetch(`${api}/user_preferences`, {
             headers: { Authorization: `Bearer ${token}` }
           });
@@ -1096,10 +1184,10 @@ function App() {
     if (isMobile) {
       return {
         ...commonStyles,
-        top: 280,
+        bottom: 200,
         left: 20,
-        width: 160,
-        height: 160
+        width: 120,
+        height: 120
       }
     }
 
@@ -1125,13 +1213,12 @@ function App() {
 
     return {
       ...commonStyles,
-      bottom: 150,
-      right: 20,
+      bottom: 280,
+      right: 250,
       width: 280,
       height: 170
     }
   }
-  
   // Function to render assistant message
   const renderAssistantMessage = (key) => (
     <div style={{
@@ -1177,322 +1264,536 @@ function App() {
         height: "100vh",
       }}
     >
-      <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote}  />
-      {/* <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} /> */}
-      <div style={{
-          position: "absolute",
-          top: "16px",
-          left: "16px",
-          zIndex: 2,
-          background: 'rgba(0, 0, 0, 0.25)',
-          "backdrop-filter": "blur(8px)",
-          "-webkit-backdrop-filter": "blur(8px)",
-          border: "1px solid rgba(255, 255, 255, 0.35)",
-          borderRadius: "21px",
-          color: "white",
-          fontSize: isMobile ? 18 : "23px",
-          width: isMobile ? 120 : 155,
-          height: isMobile ? 45 : 60,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center"
-        }}>
-          <img style={{ width: isMobile ? 35 : 50 }} src="selfai-logo.png" />
-          <div style={{marginLeft: isMobile ? 5 : 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
-            <div>Self AI</div>
-          </div>
-      </div>
-      {!isMobile && <div style={{
-          position: "absolute",
-          bottom: "16px",
-          right: "16px",
-          zIndex: 2,
-          background: 'rgba(0, 0, 0, 0.25)',
-          "backdrop-filter": "blur(8px)",
-          "-webkit-backdrop-filter": "blur(8px)",
-          border: "1px solid rgba(255, 255, 255, 0.35)",
-          borderRadius: "26px",
-          color: "white",
-          fontSize: "23px",
-          width: 100,
-          height: 50,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center"
-        }}>
-          <div style={{display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
-            <div style={{fontSize: 14}}>v0.1 Beta</div>
-          </div>
-      </div>}
-      <div
-        ref={modelDropdownRef}
-        style={{
-          position: "absolute",
-          top: isMobile ? "70px" : "85px",
-          left: "50%",
-          transform: !isMobile ? "translate(-50%, -35%)" : "translateX(-50%)",
-          zIndex: 2,
-          background: 'rgba(0, 0, 0, 0.25)',
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-          border: "1px solid rgba(255, 255, 255, 0.35)",
-          borderRadius: "26px",
-          padding: isModelDropdownOpen ? "0.8rem" : isMobile ? "0px 12px" : "0.5rem 1.2rem",
-          color: "white",
-          fontSize: isMobile ? 15 : "1.2rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          transition: "all 0.3s ease-in-out",
-          height: isModelDropdownOpen ? "auto" : "48px",
-          flexDirection: isModelDropdownOpen ? "column" : "row",
-          overflow: "hidden",
-          maxHeight: isMobile && isModelDropdownOpen ? "calc(100vh - 200px)" : "none",
-          width: isMobile && isModelDropdownOpen ? "80%" : "auto",
-          zIndex: 99
-        }}
-        onClick={() => !isModelDropdownOpen && setIsModelDropdownOpen(true)}
+      {modelLoading && <ModelLoader />}
+      {modelLoaded && (
+        <AnimatePresence>
+          {showIntroMode && <Overlay smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
+            setShowCreateAccount(false)
+            setShowLoginView(true)
+          }} toggleCreateAccountView={() => {
+            setShowLoginView(false)
+            setShowCreateAccount(true)
+          }} navigateBack={() => {
+            setShowCreateAccount(false);
+            setShowLoginView(false);
+          }} />}
+        </AnimatePresence>
+      )}
+      <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
+      {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
+        position: "absolute",
+        top: smallerThan850 ? 28 : 35,
+        right: smallerThan850 ? 15 : 50,
+        fontSize: 19,
+        color: 'rgba(255, 255, 255, 1)',
+        opacity: 0.85,
+        cursor: 'pointer'
+      }}
+      onMouseOver={e => {
+        e.currentTarget.style.opacity = 1
+        e.currentTarget.style.transform = "scale(1.05)";
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.opacity = 0.85
+        e.currentTarget.style.transform = "scale(1)";
+      }}
+      onClick={() => {
+        setShowLoginView(true)
+      }}
       >
-        {!isModelDropdownOpen ? (
-          <>
-            {selectedModel.name}
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              width="16" 
-              height="16" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-              style={{ 
-                marginLeft: "8px",
-                transition: "transform 0.2s ease",
-              }}
-            >
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </>
-        ) : (
-          <>
-            <div style={{ 
-              display: "flex", 
-              justifyContent: "space-between", 
-              width: "100%", 
-              marginBottom: "10px",
-              alignItems: "center"
-            }}>
-              <div style={{ fontSize: "1rem", fontWeight: "bold" }}>Model Selection</div>
-              <div 
-                style={{ 
-                  cursor: "pointer", 
-                  fontSize: 18, 
-                  width: 24, 
-                  height: 24, 
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "center",
-                  borderRadius: "50%",
-                  background: "rgba(255, 255, 255, 0.1)",
-                  transition: "background-color 0.2s ease"
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsModelDropdownOpen(false);
-                }}
-                onMouseOver={(e) => e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.2)"}
-                onMouseOut={(e) => e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)"}
-              >
-                ×
-              </div>
+        Log In
+      </div> : <div style={{
+        position: "absolute",
+        top: smallerThan850 ? 22 : 35,
+        right: 50,
+        fontSize: 19,
+        color: 'rgba(255, 255, 255, 1)',
+        opacity: 0.85,
+        cursor: 'pointer',
+        display: "flex"
+      }}
+      >
+        {!smallerThan850 && 
+        <><div style={{
+          marginRight: 15
+        }}>
+          Hello {user.displayName || user.email}
+        </div>
+        <div style={{
+          marginRight: 15
+        }}>
+          |
+        </div></>}
+        <div style={{
+          
+        }}
+        onMouseOver={e => {
+          e.currentTarget.style.opacity = 1
+          e.currentTarget.style.transform = "scale(1.05)";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.opacity = 0.85
+          e.currentTarget.style.transform = "scale(1)";
+        }}
+        onClick={logout}
+        >
+        Log Out
+        </div>
+        <div style={{
+          marginLeft: 25,
+          display: "flex",
+          alignItems: "center"
+        }}
+        onMouseOver={e => {
+          e.currentTarget.style.opacity = 1
+          e.currentTarget.style.transform = "scale(1.05)";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.opacity = 0.85
+          e.currentTarget.style.transform = "scale(1)";
+        }}
+        onClick={() => {
+          setIsModelVisible(false)
+          setTimeout(() => {
+            setShowIntroMode(false);
+          }, 50)
+          setTimeout(() => {
+            setIsModelVisible(true)
+            }, 200);
+        }}
+        >
+          <span>Back</span>
+          <BsArrowRight style={{
+            marginLeft: 5
+          }} />
+        </div>
+      </div> : null}
+      {/* <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} /> */}
+      {!showIntroMode && modelLoaded && (
+      <>
+        <div style={{
+            position: "absolute",
+            top: "16px",
+            left: "16px",
+            zIndex: 2,
+            background: 'rgba(0, 0, 0, 0.25)',
+            "backdrop-filter": "blur(8px)",
+            "-webkit-backdrop-filter": "blur(8px)",
+            border: "1px solid rgba(255, 255, 255, 0.35)",
+            borderRadius: "21px",
+            color: "white",
+            fontSize: isMobile ? 18 : "23px",
+            width: isMobile ? 120 : 155,
+            height: isMobile ? 45 : 60,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          }}>
+            <GiBrain style={{
+              fontSize: 38,
+              color: "whote",
+              marginLeft: -5
+            }} />
+            <div style={{marginLeft: isMobile ? 5 : 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
+              <div>Self AI</div>
             </div>
-            <div style={{ maxHeight: "190px", overflowY: "auto", width: "100%" }}>
-              {AVAILABLE_MODELS.map((model) => (
-                <div
-                  key={model.id}
-                  style={{
-                    padding: "8px 10px",
-                    margin: "3px 0",
-                    borderRadius: "10px",
-                    background: selectedModel.id === model.id ? "rgba(255, 255, 255, 0.95)" : "rgba(0, 0, 0, 0.2)",
-                    border: selectedModel.id === model.id 
-                      ? "1px solid rgba(255, 255, 255, 0.95)" 
-                      : "1px solid rgba(255, 255, 255, 0.3)",
-                    color: selectedModel.id === model.id ? "rgba(0, 0, 0, 0.8)" : "white",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease",
-                    display: "flex",
-                    flexDirection: "column",
-                    position: "relative",
-                    alignItems: "flex-start",
-                    boxShadow: selectedModel.id === model.id ? "0 2px 8px rgba(0, 0, 0, 0.1)" : "none",
-                    marginBottom: 8
+        </div>
+        <div
+          ref={modelDropdownRef}
+          style={{
+            position: "absolute",
+            top: isMobile ? "70px" : "85px",
+            left: "50%",
+            transform: !isMobile ? "translate(-50%, -35%)" : "translateX(-50%)",
+            zIndex: 2,
+            background: 'rgba(0, 0, 0, 0.25)',
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            border: "1px solid rgba(255, 255, 255, 0.35)",
+            borderRadius: "26px",
+            padding: isModelDropdownOpen ? "0.8rem" : isMobile ? "0px 12px" : "0.5rem 1.2rem",
+            color: "white",
+            fontSize: isMobile ? 15 : "1.2rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            transition: "all 0.3s ease-in-out",
+            height: isModelDropdownOpen ? "auto" : "48px",
+            flexDirection: isModelDropdownOpen ? "column" : "row",
+            overflow: "hidden",
+            maxHeight: isMobile && isModelDropdownOpen ? "calc(100vh - 200px)" : "none",
+            width: isMobile && isModelDropdownOpen ? "80%" : "auto",
+            zIndex: 99
+          }}
+          onClick={() => !isModelDropdownOpen && setIsModelDropdownOpen(true)}
+        >
+          {!isModelDropdownOpen ? (
+            <>
+              {selectedModel.name}
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="16" 
+                height="16" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+                style={{ 
+                  marginLeft: "8px",
+                  transition: "transform 0.2s ease",
+                }}
+              >
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </>
+          ) : (
+            <>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                width: "100%", 
+                marginBottom: "10px",
+                alignItems: "center"
+              }}>
+                <div style={{ fontSize: "1rem", fontWeight: "bold" }}>Model Selection</div>
+                <div 
+                  style={{ 
+                    cursor: "pointer", 
+                    fontSize: 18, 
+                    width: 24, 
+                    height: 24, 
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center",
+                    borderRadius: "50%",
+                    background: "rgba(255, 255, 255, 0.1)",
+                    transition: "background-color 0.2s ease"
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleModelSelect(model);
+                    setIsModelDropdownOpen(false);
                   }}
-                  onMouseOver={(e) => {
-                    if (selectedModel.id !== model.id) {
-                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.5)";
-                      e.currentTarget.style.background = "rgba(0, 0, 0, 0.3)";
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (selectedModel.id !== model.id) {
-                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)";
-                      e.currentTarget.style.background = "rgba(0, 0, 0, 0.2)";
-                    }
-                  }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.2)"}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)"}
                 >
-                  <div style={{ 
-                    fontWeight: "500", 
-                    display: "flex", 
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    width: "100%",
-                    fontSize: 16
-                  }}>
-                    {model.name}
-                    {selectedModel.id === model.id && (
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        width="16" 
-                        height="16" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round"
-                        style={{ color: "rgba(0, 0, 0, 0.7)" }}
-                      >
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    )}
-                  </div>
-                  <div style={{ 
-                    fontSize: "0.9rem", 
-                    opacity: selectedModel.id === model.id ? 0.8 : 0.9,
-                    maxWidth: 300,
-                    paddingRight: 15,
-                    textAlign: "left"
-                  }}>
-                    {model.description}
-                  </div>
+                  ×
                 </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {!loading &&
-      <div
-        style={{
-          position: "absolute",
-          top: "16px",
-          right: "16px",
-          zIndex: 2,
-          background: 'rgba(0, 0, 0, 0.25)',
-          "backdrop-filter": "blur(15px)",
-          "-webkit-backdrop-filter": "blur(15px)",
-          border: "1px solid rgba(255, 255, 255, 0.3)",
-          borderRadius: "26px",
-          padding: isMobile ? 9 : "15px",
-          color: "white",
-          fontSize: 17
-        }}
-      >
-        <LoginButton isMobile={isMobile} />
-      </div>}
-      <div style={{
-        position: "absolute",
-        top: isMobile ? "140px" : "100px",
-        left: "16px",
-        bottom: isMobile ? "100px" : "20px",
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0
-      }}>
-          <CollapsibleMemoriesPanel
-            token={token}
-            requiresAccount
-            memories={memories}
-            MemoryCard={MemoryCard}
-            title="Memories"
-            onClear={handleClearMemories}
-            api={api}
-            toggleComponent={token &&
-              <Switch
-                isChecked={isMemoryEnabled}
-                onChange={(value) => handleMemoryToggle(value, token)}
-                isDisabled={isTogglingMemory}
-                isLoading={loadingPreferences}
-              />
-            }
-            expanded={isMemoryExpanded}
-            toggleExpanded={() => {
-              toggleMemoryExpanded(prev => !prev)
-            }}
-            extraStyles={{
-              "maxHeight": isMobile && isChatExpanded ? "50%" : ""
-            }}
-          >
-            {memories &&
-                memories.map((memory, i) => (
-                  <MemoryCard key={i} memory={memory} token={token} api={api} onDelete={handleDeleteMemory} />
+              </div>
+              <div style={{ maxHeight: "190px", overflowY: "auto", width: "100%" }}>
+                {AVAILABLE_MODELS.map((model) => (
+                  <div
+                    key={model.id}
+                    style={{
+                      padding: "8px 10px",
+                      margin: "3px 0",
+                      borderRadius: "10px",
+                      background: selectedModel.id === model.id ? "rgba(255, 255, 255, 0.95)" : "rgba(0, 0, 0, 0.2)",
+                      border: selectedModel.id === model.id 
+                        ? "1px solid rgba(255, 255, 255, 0.95)" 
+                        : "1px solid rgba(255, 255, 255, 0.3)",
+                      color: selectedModel.id === model.id ? "rgba(0, 0, 0, 0.8)" : "white",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      flexDirection: "column",
+                      position: "relative",
+                      alignItems: "flex-start",
+                      boxShadow: selectedModel.id === model.id ? "0 2px 8px rgba(0, 0, 0, 0.1)" : "none",
+                      marginBottom: 8
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleModelSelect(model);
+                    }}
+                    onMouseOver={(e) => {
+                      if (selectedModel.id !== model.id) {
+                        e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.5)";
+                        e.currentTarget.style.background = "rgba(0, 0, 0, 0.3)";
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (selectedModel.id !== model.id) {
+                        e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)";
+                        e.currentTarget.style.background = "rgba(0, 0, 0, 0.2)";
+                      }
+                    }}
+                  >
+                    <div style={{ 
+                      fontWeight: "500", 
+                      display: "flex", 
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      width: "100%",
+                      fontSize: 16
+                    }}>
+                      {model.name}
+                      {selectedModel.id === model.id && (
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          width="16" 
+                          height="16" 
+                          viewBox="0 0 24 24" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          strokeWidth="2" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round"
+                          style={{ color: "rgba(0, 0, 0, 0.7)" }}
+                        >
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      )}
+                    </div>
+                    <div style={{ 
+                      fontSize: "0.9rem", 
+                      opacity: selectedModel.id === model.id ? 0.8 : 0.9,
+                      maxWidth: 300,
+                      paddingRight: 15,
+                      textAlign: "left"
+                    }}>
+                      {model.description}
+                    </div>
+                  </div>
                 ))}
-          </CollapsibleMemoriesPanel>
-          <CollapsibleMemoriesPanel
-            memories={[]}
-            MemoryCard={() => {}}
-            title="Chat"
-            expanded={isChatExpanded}
-            toggleExpanded={() => {
-              if (!conversing && !calling) {
-                toggleExpandChat(prev => !prev)
-              }
-            }}
-            onClear={handleClearChat}
-            api={api}
-            token={token}
-            toggleComponent={token &&
-              <Switch 
-                isChecked={isChatEnabled}
-                onChange={value => handleChatToggle(value, token)}
-                isDisabled={isTogglingChat}
-                isLoading={loadingPreferences}
-              />
+              </div>
+            </>
+          )}
+        </div>
+
+        {!loading &&
+        <div
+          style={{
+            position: "absolute",
+            top: token ? "16px" : "22px",
+            right: "16px",
+            zIndex: 2,
+            background: token ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)',
+            "backdrop-filter": "blur(15px)",
+            "-webkit-backdrop-filter": "blur(15px)",
+            border: "1px solid rgba(255, 255, 255, 0.3)",
+            borderRadius: "26px",
+            color: "white",
+            fontSize: 17,
+            height: token ? 62 : 45,
+            boxSizing: "border-box",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            padding: "0 16px"
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          onClick={() => {
+            setIsModelVisible(false)
+            setTimeout(() => {
+              setShowIntroMode(true);
+            }, 50)
+            setTimeout(() => {
+              setIsModelVisible(true)
+            }, 200);
+
+            if (!token) {
+              setShowCreateAccount(true);
             }
-            toggleLabel="Save"
-            extraStyles={{
-              "maxHeight": isMobile && isMemoryExpanded ? "50%" : ""
+          }}
+        >
+          {token && <RxAvatar style={{
+            fontSize: 30,
+            color: "white"
+          }} />}
+          {!token ? <div style={{ color: "black", fontSize: 15, fontWeight: "bold"}}>Create Account</div> : null}
+        </div>}
+        <div style={{
+          position: "absolute",
+          top: isMobile ? "140px" : "100px",
+          left: "16px",
+          bottom: isMobile ? "100px" : "20px",
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          marginTop: isMobile && !isChatExpanded && !isMemoryExpanded ? "50%" : 0
+        }}>
+            <CollapsibleMemoriesPanel
+              token={token}
+              requiresAccount
+              memories={memories}
+              MemoryCard={MemoryCard}
+              title="Memories"
+              onClear={handleClearMemories}
+              api={api}
+              toggleComponent={token &&
+                <Switch
+                  isChecked={isMemoryEnabled}
+                  onChange={(value) => handleMemoryToggle(value, token)}
+                  isDisabled={isTogglingMemory}
+                  isLoading={loadingPreferences}
+                />
+              }
+              expanded={isMemoryExpanded}
+              toggleExpanded={() => {
+                toggleMemoryExpanded(prev => !prev)
+              }}
+              extraStyles={{
+                "maxHeight": isMobile && isChatExpanded ? "50%" : ""
+              }}
+            >
+              {memories &&
+                  memories.map((memory, i) => (
+                    <MemoryCard key={i} memory={memory} token={token} api={api} onDelete={handleDeleteMemory} />
+                  ))}
+            </CollapsibleMemoriesPanel>
+            <CollapsibleMemoriesPanel
+              memories={[]}
+              MemoryCard={() => {}}
+              title="Chat"
+              expanded={isChatExpanded}
+              toggleExpanded={() => {
+                if (!conversing && !calling) {
+                  toggleExpandChat(prev => !prev)
+                }
+              }}
+              onClear={handleClearChat}
+              api={api}
+              token={token}
+              toggleComponent={token &&
+                <Switch 
+                  isChecked={isChatEnabled}
+                  onChange={value => handleChatToggle(value, token)}
+                  isDisabled={isTogglingChat}
+                  isLoading={loadingPreferences}
+                />
+              }
+              toggleLabel="Save"
+              extraStyles={{
+                "maxHeight": isMobile && isMemoryExpanded ? "50%" : ""
+              }}
+            >
+              <div style={{
+                position: "relative",
+                width: "100%",
+                height: "100%",
+                minHeight: 20,
+                display: "flex"
+              }}>
+                <div style={{
+                  position: "absolute",
+                  width: "100%",
+                  height: 1,
+                  background: "rgba(255, 255, 255, 0.25)",
+                  display: "flex"
+                }} />
+                {chatLoading || !isWsOpen ?
+                <div style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingTop: 15
+                }}>
+                  <LoadingDiv
+                    isLoading 
+                    duration={0.75} 
+                    width={`${25}px`}
+                    height={`${25}px`}
+                    borderWidth={1}
+                    loadingColor="#FFFFFF"
+                    borderColor="rgba(255, 255, 255, 0.5)"
+                    borderRadius={`${10}px`}
+                    backgroundColor="transparent"
+                    loadingSegmentPercentage={25}
+                  />
+                </div>
+                : <Chat chat={chat} onSendMessage={message => {
+                  if (wsRef.current) {
+                    setChat([...chat, {
+                      "role": "user",
+                      "content": message
+                    }])
+
+                    wsRef.current.send(JSON.stringify({
+                      "type": "CHAT_MESSAGE",
+                      "message": message
+                    }))
+
+                    setLoadingChat(true);
+                  }
+                }} isLoading={loadingChat} token={token} api={api} onDeleteMessage={handleDeleteMessage} />}
+              </div>
+            </CollapsibleMemoriesPanel>
+        </div>
+        {conversing &&
+          <div style={{
+            position: "absolute",
+            bottom: isMobile ? 100 : "140px",
+            right: "50%",
+            display: "flex",
+            transform: "translateX(50%)",
+            display: "flex",
+            flexDirection: "column",
+            minWidth: isMobile ? 350 : 450,
+            maxWidth: isMobile ? 350 : 700
+          }}>
+            {/* Render messages in the correct order based on which was received last */}
+            {userVoiceMessage && assistantMessage ? (
+              // Both messages exist
+              latestMessageType === 'assistant' ? (
+                // Assistant was the last to speak
+                <>
+                  {renderUserMessage(userMessageKey)}
+                  {renderAssistantMessage(assistantMessageKey)}
+                </>
+              ) : (
+                // User was the last to speak
+                <>
+                  {renderAssistantMessage(assistantMessageKey)}
+                  {renderUserMessage(userMessageKey)}
+                </>
+              )
+            ) : (
+              // Only one message exists
+              <>
+                {assistantMessage && renderAssistantMessage(assistantMessageKey)}
+                {userVoiceMessage && renderUserMessage(userMessageKey)}
+              </>
+            )}
+          </div>}
+        <div style={{
+          position: "absolute",
+          bottom: isMobile ? "20px" : "50px",
+          right: "50%",
+          display: "flex",
+          transform: "translateX(50%)",
+        }}>
+          <div
+            style={{
+              zIndex: 2,
+              "backdrop-filter": "blur(8px)",
+              "-webkit-backdrop-filter": "blur(8px)",
+              background: 'rgba(0, 0, 0, 0.25)',
+              border: "1px solid rgba(255, 255, 255, 0.4)",
+              borderRadius: "46px",
+              color: "white",
+              textAlign: "center",
+              minWidth: 140,
+              minHeight: 60
             }}
           >
-            <div style={{
-              position: "relative",
-              width: "100%",
-              height: "100%",
-              minHeight: 20,
-              display: "flex"
-            }}>
-              <div style={{
-                position: "absolute",
-                width: "100%",
-                height: 1,
-                background: "rgba(255, 255, 255, 0.25)",
-                display: "flex"
-              }} />
-              {chatLoading || !isWsOpen ?
-              <div style={{
+            {!isWsOpen && <div style={{
                 width: '100%',
+                height: '100%',
+                alignItems: 'center',
+                justifyItems: 'center',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingTop: 15
               }}>
                 <LoadingDiv
                   isLoading 
@@ -1506,149 +1807,53 @@ function App() {
                   backgroundColor="transparent"
                   loadingSegmentPercentage={25}
                 />
-              </div>
-              : <Chat chat={chat} onSendMessage={message => {
-                if (wsRef.current) {
-                  setChat([...chat, {
-                    "role": "user",
-                    "content": message
-                  }])
-
-                  wsRef.current.send(JSON.stringify({
-                    "type": "CHAT_MESSAGE",
-                    "message": message
-                  }))
-
-                  setLoadingChat(true);
-                }
-              }} isLoading={loadingChat} token={token} api={api} onDeleteMessage={handleDeleteMessage} />}
+              </div>}
+              {renderConversing()}
             </div>
-          </CollapsibleMemoriesPanel>
-      </div>
-      {conversing &&
-        <div style={{
-          position: "absolute",
-          bottom: isMobile ? 100 : "140px",
-          right: "50%",
-          display: "flex",
-          transform: "translateX(50%)",
-          display: "flex",
-          flexDirection: "column",
-          minWidth: isMobile ? 350 : 450,
-          maxWidth: isMobile ? 350 : 700
-        }}>
-          {/* Render messages in the correct order based on which was received last */}
-          {userVoiceMessage && assistantMessage ? (
-            // Both messages exist
-            latestMessageType === 'assistant' ? (
-              // Assistant was the last to speak
-              <>
-                {renderUserMessage(userMessageKey)}
-                {renderAssistantMessage(assistantMessageKey)}
-              </>
-            ) : (
-              // User was the last to speak
-              <>
-                {renderAssistantMessage(assistantMessageKey)}
-                {renderUserMessage(userMessageKey)}
-              </>
-            )
-          ) : (
-            // Only one message exists
-            <>
-              {assistantMessage && renderAssistantMessage(assistantMessageKey)}
-              {userVoiceMessage && renderUserMessage(userMessageKey)}
-            </>
-          )}
-        </div>}
-      <div style={{
-        position: "absolute",
-        bottom: isMobile ? "20px" : "50px",
-        right: "50%",
-        display: "flex",
-        transform: "translateX(50%)",
-      }}>
-        <div
-          style={{
-            zIndex: 2,
-            "backdrop-filter": "blur(8px)",
-            "-webkit-backdrop-filter": "blur(8px)",
-            background: 'rgba(0, 0, 0, 0.25)',
-            border: "1px solid rgba(255, 255, 255, 0.4)",
-            borderRadius: "46px",
-            color: "white",
-            textAlign: "center",
-            minWidth: 140,
-            minHeight: 60
-          }}
-        >
-          {!isWsOpen && <div style={{
-              width: '100%',
-              height: '100%',
-              alignItems: 'center',
-              justifyItems: 'center',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <LoadingDiv
-                isLoading 
-                duration={0.75} 
-                width={`${25}px`}
-                height={`${25}px`}
-                borderWidth={1}
-                loadingColor="#FFFFFF"
-                borderColor="rgba(255, 255, 255, 0.5)"
-                borderRadius={`${10}px`}
-                backgroundColor="transparent"
-                loadingSegmentPercentage={25}
-              />
-            </div>}
-            {renderConversing()}
-          </div>
-          {conversing && (
-            <div style={{
-                "backdrop-filter": "blur(8px)",
-                "-webkit-backdrop-filter": "blur(8px)",
-                background: 'rgba(0, 0, 0, 0.25)',
-                border: "1px solid rgba(255, 255, 255, 0.4)",
-                padding: 12,
-                borderRadius: 46,
-                marginLeft: 10,
-                cursor: "pointer"
-              }}
-              onClick={handleDisconnect}
-            >
-              <LoadingDiv
-                isLoading={disconnecting} 
-                duration={0.75}
-                width={`${46}px`}
-                height={`${46}px`}
-                borderWidth={1}
-                loadingColor="#FFFFFF"
-                borderColor="rgba(255, 255, 255, 0.5)"
-                borderRadius={`${46}px`}
-                backgroundColor="#ed7878"
-                loadingSegmentPercentage={25}
+            {conversing && (
+              <div style={{
+                  "backdrop-filter": "blur(8px)",
+                  "-webkit-backdrop-filter": "blur(8px)",
+                  background: 'rgba(0, 0, 0, 0.25)',
+                  border: "1px solid rgba(255, 255, 255, 0.4)",
+                  padding: 12,
+                  borderRadius: 46,
+                  marginLeft: 10,
+                  cursor: "pointer"
+                }}
+                onClick={handleDisconnect}
               >
-              <HiOutlinePhoneXMark style={{fontSize: 21}} />
-            </LoadingDiv>
-          </div>)}
-        </div>
-        {showVideo && <div style={getStylesForVideo()}>
-          <video
-            id="user-video"
-            autoPlay
-            playsInline
-            muted
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover"
-            }}
-          />
-        </div>}
-    </div>
+                <LoadingDiv
+                  isLoading={disconnecting} 
+                  duration={0.75}
+                  width={`${46}px`}
+                  height={`${46}px`}
+                  borderWidth={1}
+                  loadingColor="#FFFFFF"
+                  borderColor="rgba(255, 255, 255, 0.5)"
+                  borderRadius={`${46}px`}
+                  backgroundColor="#ed7878"
+                  loadingSegmentPercentage={25}
+                >
+                <HiOutlinePhoneXMark style={{fontSize: 21}} />
+              </LoadingDiv>
+            </div>)}
+          </div>
+          {showVideo && <div style={getStylesForVideo()}>
+            <video
+              id="user-video"
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover"
+              }}
+            />
+          </div>}
+          </>)}
+      </div>
   );
 }
 
