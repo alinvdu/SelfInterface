@@ -12,8 +12,8 @@ WORKDIR /app/self-ui
 RUN npm install
 RUN npm run build
 
-# Switch to a Python base image for the backend
-FROM python:3.9-slim
+# Switch to a Python 3.10 base image for the backend
+FROM python:3.10-slim
 
 # Set working directory
 WORKDIR /app
@@ -31,10 +31,11 @@ COPY --from=frontend-builder /app/self-ui/build/ ./fast-api/frontend/
 
 # Install Python dependencies
 WORKDIR /app/fast-api
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose the port
 EXPOSE 8000
 
 # Command to run the application
-CMD gunicorn main:app -k uvicorn.workers.UvicornWorker --workers 1 --threads 16 --bind 0.0.0.0:$PORT
+CMD gunicorn main:app -k uvicorn.workers.UvicornWorker --workers 1 --threads 16 --bind 0.0.0.0:${PORT:-8000}
