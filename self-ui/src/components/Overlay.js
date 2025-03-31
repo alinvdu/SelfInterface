@@ -179,6 +179,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               marginTop: 25,
               border: "1px solid rgba(255, 255, 255, 0.75)"
             }}
+            playsInline
           >
             <source src="Slide1.mp4" type="video/mp4" />
             Your browser does not support the video tag.
@@ -196,7 +197,6 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           alignItems: "center",
           justifyContent: "center",
           flexDirection: "column",
-          height: "1005",
           overflow: "auto"
         }}>
             <div style={{display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", marginTop: 0, marginLeft: 15}}>
@@ -361,7 +361,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         boxSizing: "border-box",
         overflowY: "auto",
         paddingRight: isSmallSize ? "0" : "45%",
-        height: "100%",
+        minHeight: "100%",
         display: "flex",
         flexDirection: "column"
       }}
@@ -1231,8 +1231,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               <button
                 onClick={goToPrevSlide}
                 style={{
-                  background: "rgba(0, 0, 0, 0.5)",
-                  color: "white",
+                  background: "rgba(255, 255, 255, 0.85)",
+                  color: "black",
                   border: "none",
                   borderRadius: "50%",
                   width: 40,
@@ -1243,7 +1243,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   cursor: "pointer",
                   pointerEvents: "auto",
                   position: "absolute",
-                  left: 20,
+                  left: isSmallSize ? 0 : 20,
                   transform: "translateY(-50%)"
                 }}
               >
@@ -1252,8 +1252,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               <button
                 onClick={goToNextSlide}
                 style={{
-                  background: "rgba(0, 0, 0, 0.5)",
-                  color: "white",
+                  background: "rgba(255, 255, 255, 0.86)",
+                  color: "black",
                   border: "none",
                   borderRadius: "50%",
                   width: 40,
@@ -1264,7 +1264,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   cursor: "pointer",
                   pointerEvents: "auto",
                   position: "absolute",
-                  right: 20,
+                  right: isSmallSize ? 0 : 20,
                   transform: "translateY(-50%)"
                 }}
               >

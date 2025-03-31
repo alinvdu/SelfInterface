@@ -1280,7 +1280,7 @@ function App() {
         </AnimatePresence>
       )}
       <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
-      {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
+      {showIntroMode && !showLoginView && !showCreateAccount && !modelLoading ? !token ? <div style={{
         position: "absolute",
         top: smallerThan850 ? 28 : 35,
         right: smallerThan850 ? 15 : 50,
@@ -1577,7 +1577,7 @@ function App() {
             borderRadius: "26px",
             color: "white",
             fontSize: 17,
-            height: token ? 62 : 45,
+            height: token ? isMobile ? 47 : 62 : 45,
             boxSizing: "border-box",
             display: "flex",
             alignItems: "center",
