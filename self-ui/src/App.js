@@ -1012,7 +1012,7 @@ function App() {
                 bottom: '100%',
                 marginBottom: '12px',
                 width: '280px',
-                background: 'rgba(0, 0, 0, 0.25)',
+                background: isMobile ? 'rgba(83, 83, 83, 0.85)' : 'rgba(0, 0, 0, 0.25)',
                 backdropFilter: 'blur(8px)',
                 WebkitBackdropFilter: 'blur(8px)',
                 border: '1px solid rgba(255, 255, 255, 0.4)',
@@ -1771,6 +1771,7 @@ function App() {
           right: "50%",
           display: "flex",
           transform: "translateX(50%)",
+          zIndex: 3
         }}>
           <div
             style={{
