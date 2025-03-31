@@ -196,8 +196,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           marginTop: 0,
           alignItems: "center",
           justifyContent: "center",
-          flexDirection: "column",
-          overflow: "auto"
+          flexDirection: "column"
         }}>
             <div style={{display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", marginTop: 0, marginLeft: 15}}>
               <div style={{ color: "rgba(255, 255, 255, 0.8)", fontSize: "1.1rem", maxWidth: 650, lineHeight: 1.6, textAlign: "center", marginTop: 8, fontSize: smallerThan850 ? 14 : 16  }}>
@@ -1079,14 +1078,14 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
       ) : (
         // Original content with slides
         <div style={{
-          display: "flex",
+          display: isSmallSize ? "block" : "flex",
           flexDirection: "column",
           position: "relative",
           justifyContent: "flex-end",
           minHeight: 0,
           flex: 1
         }}>
-          <div style={{display: "flex", height: token ? "15%" : "30%", flexDirection: "column", alignItems: "center", justifyContent: "center"}}>
+          <div style={{display: "flex", height: token ? "15%" : "30%", minHeight: 0, flexDirection: "column", alignItems: "center", justifyContent: "center"}}>
             <div style={{right: 0, display: "flex", justifyContent: "center", alignItems: "center" }}>
               <TypingText fontSize={smallerThan850 ? 25 : 35} texts={[
                 "Psychology, unlocked!",
@@ -1179,7 +1178,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               boxSizing: "border-box",
               width: "100%",
               position: "relative",
-              flex: 1
+              flex: 1,
+              minHeight: 0
             }}
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
