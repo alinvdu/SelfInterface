@@ -20,3 +20,6 @@ rm -rf fast-api/frontend/*
 # Copy the contents of the build folder into backend/frontend
 # Adjust the source folder name if needed (e.g., 'build' vs. 'dist')
 cp -r self-ui/build/* fast-api/frontend/
+
+# At the end of build.sh
+chmod +x start.sh
