@@ -55,13 +55,16 @@ function ModelLoader() {
     <div className="model-loader-container">
       <div className="model-loader-content">
       <div style={{
-        position: "relative"
+        position: "relative",
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center"
       }}>
         <LoadingDiv
             isLoading 
             duration={0.75} 
-            width={`${45}px`}
-            height={`${45}px`}
+            width={`${32}px`}
+            height={`${32}px`}
             borderWidth={2}
             loadingColor="#FFFFFF"
             borderColor="rgba(255, 255, 255, 0.5)"
@@ -69,18 +72,11 @@ function ModelLoader() {
             backgroundColor="transparent"
             loadingSegmentPercentage={25}
         />
-        <FiBox style={{
-          fontSize: 25,
-          position: "absolute",
-          top: 10,
-          left: 10,
-          animation: "spin 4s linear infinite"
-        }} />
+        <span style={{
+          fontSize: 17,
+          marginLeft: 15
+        }}>Loading Graphics...</span>
       </div>
-      <span style={{
-        fontSize: 17,
-        marginTop: 15
-      }}>Loading Model...</span>
       </div>
     </div>
   );
