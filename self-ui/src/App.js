@@ -1391,7 +1391,7 @@ function App() {
           }}>
             <GiBrain style={{
               fontSize: 38,
-              color: "whote",
+              color: "white",
               marginLeft: -5
             }} />
             <div style={{marginLeft: isMobile ? 5 : 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
