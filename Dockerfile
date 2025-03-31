@@ -18,9 +18,16 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install required system dependencies
+# Install required system dependencies for OpenCV and other libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    ffmpeg \
+    libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend code
