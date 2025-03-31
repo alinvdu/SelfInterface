@@ -45,4 +45,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
 
 # Command to run the application
-CMD gunicorn main:app -k uvicorn.workers.UvicornWorker --workers 1 --threads 16 --bind 0.0.0.0:${PORT:-8000}
+CMD gunicorn main:app -k uvicorn.workers.UvicornWorker --workers 1 --threads 16 --bind 0.0.0.0:8000
