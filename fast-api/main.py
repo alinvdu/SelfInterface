@@ -284,6 +284,28 @@ db = firestore.client()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' https://www.gstatic.com https://apis.google.com 'unsafe-eval'; "
+        "worker-src 'self' blob:; "
+        "connect-src 'self' https://www.gstatic.com https://accounts.google.com https://www.googleapis.com https://identitytoolkit.googleapis.com blob:; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-src 'self' https://self-be400.firebaseapp.com; "
+        "frame-ancestors 'none'; "
+    )
+    response.headers["Content-Security-Policy"] = csp
+
+    return response
+
 DG_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
 dg_client = DeepgramClient(DG_API_KEY)
 
