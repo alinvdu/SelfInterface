@@ -1,6 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Query, Depends, Header, HTTPException, WebSocket, Request
-from fastapi.responses import StreamingResponse, JSONResponse, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
 import os
 import uuid
 import aiofiles
@@ -9,7 +8,7 @@ import asyncio
 from datetime import datetime
 import re
 import json
-from typing import Optional, Callable
+from typing import Optional
 import traceback
 
 from openai import OpenAI
@@ -34,20 +33,6 @@ from HumeHandler import HumeWebSocketHandler
 import cmudict
 
 cmu = cmudict.dict()
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        
-        # Add security headers
-        response.headers["X-Frame-Options"] = "DENY"  # Prevent clickjacking
-        response.headers["X-Content-Type-Options"] = "nosniff"  # Prevent content type sniffing
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"  # Enforce HTTPS
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
-        
-        return response
 
 # Configure logging
 # logging.basicConfig(
@@ -298,8 +283,6 @@ db = firestore.client()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
-
-app.add_middleware(SecurityHeadersMiddleware)
 
 DG_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
 dg_client = DeepgramClient(DG_API_KEY)
@@ -1945,7 +1928,7 @@ async def user_conversations_endpoint(user: dict = Depends(verify_token)):
 
 from fastapi.staticfiles import StaticFiles
 
-# app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 def get_chat_enabled(userId):
     chat_enabled = True
