@@ -423,10 +423,50 @@ function App() {
 
   const [showTipCard, setShowTipCard] = useState(false);
   const progressIntervalRef = useRef(null);
+  const tipShownRef = useRef(false);
+
+  useEffect(() => {
+    if (!showIntroMode && !token && !conversing && !tipShownRef.current) {
+      setShowTipCard(true);
+      tipShownRef.current = true;
+    }
+  }, [showIntroMode, token, conversing]);
+
+  useEffect(() => {
+    if (showTipCard) {
+      const startTime = Date.now();
+      const duration = 20000;
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+
+      progressIntervalRef.current = setInterval(() => {
+        const elapsedTime = Date.now() - startTime;
+        const progressPercent = (elapsedTime / duration) * 100;
+
+        const progressBar = document.getElementById('tip-progress-bar');
+        if (progressBar) {
+          progressBar.style.width = `${Math.min(progressPercent, 100)}%`;
+        }
+
+        if (elapsedTime >= duration) {
+          clearInterval(progressIntervalRef.current);
+          setShowTipCard(false);
+        }
+      }, 100);
+
+      return () => {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+        }
+      };
+    }
+  }, [showTipCard]);
 
   useEffect(() => {
     // Show tip card when intro mode is hidden and user is not logged in
-    if (!showIntroMode && !token && !conversing) {
+    if (!showIntroMode && !token && !conversing && !tipShownRef.current) {
       // Show the tip card
       setShowTipCard(true);
       
@@ -463,7 +503,7 @@ function App() {
           clearInterval(progressIntervalRef.current);
         }
       };
-    } else {
+    } else if (!tipShownRef.current) {
       // Hide the tip card and clear the interval
       setShowTipCard(false);
       if (progressIntervalRef.current) {
@@ -1159,6 +1199,8 @@ function App() {
                   toggleExpandChat(false);
                   setPhoneCalling(true);
                   initiateWebRTC(false); // Audio call
+                  clearInterval(progressIntervalRef.current);
+                  setShowTipCard(false);
                 }}
                 onMouseOver={(e) => {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
@@ -1192,6 +1234,8 @@ function App() {
                   setPhoneCalling(true);
                   initiateWebRTC(true); // Video call
                   setShowVideo(true);
+                  clearInterval(progressIntervalRef.current);
+                  setShowTipCard(false);
                 }}
                 onMouseOver={(e) => {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
@@ -1330,8 +1374,8 @@ function App() {
 
     return {
       ...commonStyles,
-      bottom: 280,
-      right: 250,
+      bottom: 50,
+      right: 50,
       width: 280,
       height: 170
     }
@@ -1731,7 +1775,7 @@ function App() {
         </div>}
 
         {/* Tip Card */}
-        {showTipCard && !token && !showIntroMode && (
+        {showTipCard && !token && !showIntroMode && !isMobile && (
           <div
           className={showTipCard ? "tipCardEnter" : "tipCardExit"}
           style={{
@@ -1758,8 +1802,21 @@ function App() {
             <div style={{ 
               display: "flex", 
               alignItems: "center", 
-              marginBottom: "10px"
+              marginBottom: "10px",
+              position: "relative",
+              width: "100%"
             }}>
+              <IoCloseCircleOutline style={{
+                fontSize: 24,
+                position: "absolute",
+                right: 0,
+                top: 0,
+                cursor: "pointer"
+              }} onClick={(e) => {
+                e.stopPropagation();
+                clearInterval(progressIntervalRef.current);
+                setShowTipCard(false);
+              }} />
               <IoIosInformationCircleOutline style={{
                 fontSize: 24,
                 marginRight: 5

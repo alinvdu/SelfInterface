@@ -1962,6 +1962,7 @@ async def process_message(
                 print('Emotional context:', emotion_context)
         
         assistant_text = None
+        hasEmote = False
         
         response_decision = await determine_response_type(user_text)
         if response_decision.get("response_type") == "express_emote":
@@ -1981,6 +1982,8 @@ async def process_message(
             # Ensure emote is one of our supported types
             if emote_type not in ["happy", "sad", "anger", "disappointment", "surprise"]:
                 emote_type = "happy"
+
+            hasEmote = True
 
         history.append({"role": "user", "content": user_text})
 
@@ -2002,7 +2005,10 @@ async def process_message(
             })
             history.append({"role": "assistant", "content": assistant_text})
 
-            await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, emote_type)
+            if hasEmote:
+                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, emote_type)
+            else:
+                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket)
         else:
             if not assistant_text:
                 history.append({"role": "user", "content": user_prompt})
