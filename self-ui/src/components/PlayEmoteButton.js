@@ -86,7 +86,7 @@ const PlayEmoteButton = ({ emoteType, onClick }) => {
     >
       <div style={{ display: 'flex', alignItems: 'center' }}>
         <PiPlayCircleLight style={{ marginRight: '3px', fontSize: 19 }} />
-        <span>Expression</span>
+        <span>Emote</span>
       </div>
       {isPlaying && (
         <div style={{
