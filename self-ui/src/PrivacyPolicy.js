@@ -113,6 +113,9 @@ const PrivacyPolicy = () => {
         <p style={paragraphStyle}>
           Access to stored data is strictly limited to essential system functions.
         </p>
+        <p style={paragraphStyle}>
+            Data is shared with 3rd party Service providers, see 6 for a list.
+        </p>
       </section>
 
       <section>
@@ -141,7 +144,19 @@ const PrivacyPolicy = () => {
       </section>
 
       <section>
-        <h2 style={headingStyle}>6. Cookies and Tracking</h2>
+        <h2 style={headingStyle}>6. Third party service providers</h2>
+        <p style={paragraphStyle}>
+          In order to run AI inference, emotion detection and speech to text transcription the following list of services are used:
+        </p>
+        <ul style={listStyle}>
+          <li>OpenAI - data about conversation history, text based on vector embeddings are shared with OpenAI for inference. Voice messages are shared for transcription.</li>
+          <li>DeepGram - voice data is shared for live conversations for transcription.</li>
+          <li>HumeAI - face data & voice data shared for emotion analysis.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 style={headingStyle}>7. Cookies and Tracking</h2>
         <p style={paragraphStyle}>
           We do <strong>not</strong> use analytics tools, tracking cookies, or third-party advertising services.
         </p>
@@ -151,7 +166,7 @@ const PrivacyPolicy = () => {
       </section>
 
       <section>
-        <h2 style={headingStyle}>7. Your Rights (GDPR and Other Regions)</h2>
+        <h2 style={headingStyle}>8. Your Rights (GDPR and Other Regions)</h2>
         <p style={paragraphStyle}>
           If you are located in the EU, UK, or another region with applicable data protection laws, you have the right to:
         </p>
@@ -167,7 +182,7 @@ const PrivacyPolicy = () => {
       </section>
 
       <section>
-        <h2 style={headingStyle}>8. Contact Us</h2>
+        <h2 style={headingStyle}>9. Contact Us</h2>
         <p style={paragraphStyle}>
           For any questions about this policy or to request account/data deletion:
         </p>
