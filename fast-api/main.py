@@ -294,10 +294,9 @@ async def add_security_headers(request: Request, call_next):
 
     csp = (
         "default-src 'self'; "
-        "script-src 'self' https://www.gstatic.com https://apis.google.com 'unsafe-eval'; "
+        "script-src 'self' https://www.gstatic.com https://apis.google.com; "
         "worker-src 'self' blob:; "
-        "connect-src 'self' https://www.gstatic.com https://accounts.google.com "
-        "https://www.googleapis.com https://identitytoolkit.googleapis.com blob:; "
+        "connect-src 'self' https://www.gstatic.com https://accounts.google.com https://www.googleapis.com https://identitytoolkit.googleapis.com blob:; "
         "img-src 'self' blob: data:; "
         "object-src 'none'; "
         "base-uri 'self'; "
