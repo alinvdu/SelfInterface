@@ -15,6 +15,8 @@ import { OrbitControls } from "@react-three/drei";
 import { HiOutlinePhone, HiOutlinePhoneXMark } from "react-icons/hi2";
 import { RiVoiceprintFill } from "react-icons/ri";
 import { LuBrainCog } from "react-icons/lu";
+import { IoIosInformationCircleOutline } from "react-icons/io";
+
 
 import Model from "./Model.js";
 // import Model from "./ModelAnimation.js";
@@ -35,7 +37,7 @@ import PrivacyPolicy from "./PrivacyPolicy.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
-const api = "https://selfai.live";
+const api = "http://localhost:8000";
 
 const AVAILABLE_MODELS = [
   {
@@ -417,6 +419,67 @@ function App() {
   const [showIntroMode, setShowIntroMode] = useState(false);
   const [showLoginView, setShowLoginView] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
+  const [initialAppearance, setInitialAppearance] = useState(true);
+
+  const [showTipCard, setShowTipCard] = useState(false);
+  const progressIntervalRef = useRef(null);
+
+  useEffect(() => {
+    // Show tip card when intro mode is hidden and user is not logged in
+    if (!showIntroMode && !token && !conversing) {
+      // Show the tip card
+      setShowTipCard(true);
+      
+      // Start the 30-second timer
+      const startTime = Date.now();
+      const duration = 20000; // 30 seconds
+      
+      // Clear any existing interval
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+      
+      // Update the progress bar every 100ms
+      progressIntervalRef.current = setInterval(() => {
+        const elapsedTime = Date.now() - startTime;
+        const progressPercent = (elapsedTime / duration) * 100;
+        
+        // Update the width of the progress bar directly via DOM
+        const progressBar = document.getElementById('tip-progress-bar');
+        if (progressBar) {
+          progressBar.style.width = `${Math.min(progressPercent, 100)}%`;
+        }
+        
+        // When time is up, hide the card and clear the interval
+        if (elapsedTime >= duration) {
+          clearInterval(progressIntervalRef.current);
+          setShowTipCard(false);
+        }
+      }, 100);
+      
+      // Cleanup function
+      return () => {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+        }
+      };
+    } else {
+      // Hide the tip card and clear the interval
+      setShowTipCard(false);
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    }
+  }, [showIntroMode, token, conversing]);
+  
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
   const [showPrivacyPolicyDialog, setShowPrivacyPolicyDialog] = useState(false);
 
@@ -524,6 +587,12 @@ function App() {
   const prevAssistantMessageRef = useRef(null);
   const wsReconnectRef = useRef(null);
   const manualCloseRef = useRef(false);
+
+  const handlePlayMessageEmote = (emoteType) => {
+    if (emoteType) {
+      setCurrentEmote(emoteType);
+    }
+  };
 
   const processPhoneCallEvents = (messages) => {
     const processed = [];
@@ -679,6 +748,7 @@ function App() {
           updatedChat.push({
             "role": "assistant",
             "content": message.message,
+            "emote_type": message.emote_type,
             "timestamp": currentTimestamp
           });
           
@@ -766,7 +836,54 @@ function App() {
         if (message.emote_type) {
           setCurrentEmote(message.emote_type);
         }
-      } 
+      } else if (message.type === "AUDIO_MESSAGE") {
+        // Create and store a blob URL for the audio
+        const audioBase64 = message.audio;
+        const binaryAudio = atob(audioBase64);
+        const audioArray = new Uint8Array(binaryAudio.length);
+        for (let i = 0; i < binaryAudio.length; i++) {
+          audioArray[i] = binaryAudio.charCodeAt(i);
+        }
+        const audioBlob = new Blob([audioArray], { type: 'audio/mp3' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Add to chat with necessary metadata
+        const newMessage = {
+          role: "assistant",
+          type: "AUDIO_MESSAGE",
+          content: message.text,
+          audioUrl: audioUrl,
+          timestamp: Math.floor(Date.now() / 1000)
+        };
+        
+        // Add emote type if it exists
+        if (message.emote_type) {
+          newMessage.emote_type = message.emote_type;
+        }
+        
+        // Update the chat state
+        setChat(chat => {
+          // Check if we need to add a Today separator
+          const updatedChat = [...chat];
+          const currentTimestamp = Math.floor(Date.now() / 1000);
+          
+          // If we need a "Today" separator, add it
+          // have to revisit this
+          if (needsTodaySeparator(updatedChat)) {
+            updatedChat.push({
+              type: 'DATE_SEPARATOR',
+              content: 'Today',
+              timestamp: currentTimestamp
+            });
+          }
+          
+          // Add the new message
+          updatedChat.push(newMessage);
+          return updatedChat;
+        });
+        
+        setLoadingChat(false);
+      }
     };
 
     wsRef.current.onopen = () => {
@@ -1000,7 +1117,7 @@ function App() {
             <HiOutlinePhone style={{ fontSize: 21 }} />
           </LoadingDiv>
           <div style={{ marginLeft: isMobile ? 7 : "1rem", marginRight: "0.5rem", fontSize: isMobile ? "15px" : "18px" }}>{calling ? "Calling Atlas..." : "Let's Connect"}</div>
-          
+
           {/* Call Options Dropdown */}
           {isCallDropdownVisible && (
             <div 
@@ -1612,6 +1729,108 @@ function App() {
           }} />}
           {!token ? <div style={{ color: "black", fontSize: 15, fontWeight: "bold"}}>Create Account</div> : null}
         </div>}
+
+        {/* Tip Card */}
+        {showTipCard && !token && !showIntroMode && (
+          <div
+          className={showTipCard ? "tipCardEnter" : "tipCardExit"}
+          style={{
+            position: "absolute",
+            top: "82px",
+            right: "16px",
+            width: isMobile ? "250px" : "320px",
+            background: 'rgba(0, 0, 0, 0.35)',
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            border: "1px solid rgba(255, 255, 255, 0.4)",
+            borderRadius: "12px",
+            padding: "12px",
+            color: "white",
+            zIndex: 10,
+            boxShadow: "0 4px 15px rgba(0, 0, 0, 0.2)",
+            overflow: "hidden", // Important to contain the progress bar
+            opacity: showTipCard ? 1 : 0,
+            transform: showTipCard ? "translateY(0)" : "translateY(-20px)",
+            transition: "opacity 0.5s ease, transform 0.5s ease"
+          }}
+        >
+            {/* Header */}
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              marginBottom: "10px"
+            }}>
+              <IoIosInformationCircleOutline style={{
+                fontSize: 24,
+                marginRight: 5
+              }} />
+              <div style={{ 
+                fontWeight: "600", 
+                fontSize: "16px"
+              }}>
+                Useful tip
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div style={{ 
+              fontSize: "15px", 
+              lineHeight: "1.5",
+              marginBottom: "16px",
+              textAlign: "left"
+            }}>
+              <span style={{fontWeight: "bold"}}>Voice connection</span> features facial expressions and voice cues recognition. This is the best way to connect with <span style={{fontWeight: "bold"}}>Atlas</span>.
+            </div>
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.85)',
+              border: "1px solid rgba(255, 255, 255, 0.3)",
+              borderRadius: "26px",
+              color: "black",
+              fontSize: 14,
+              height: 32,
+              width: 100,
+              boxSizing: "border-box",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent body click from closing it immediately
+              setIsCallDropdownVisible(true); // Show dropdown instead of dialog
+              clearInterval(progressIntervalRef.current);
+              setShowTipCard(false);
+            }}>
+              Connect
+            </div>
+            
+            {/* Progress Bar Container */}
+            <div style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              width: "100%",
+              height: "3px",
+              backgroundColor: "rgba(255, 255, 255, 0.1)"
+            }}>
+              {/* Actual Progress Bar */}
+              <div
+                id="tip-progress-bar"
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  height: "100%",
+                  width: "0%", // Starts at 0%
+                  backgroundColor: "white",
+                  boxShadow: "0 0 10px rgba(66, 135, 245, 0.7)",
+                  transition: "none" // No transition, we update width directly
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         <div style={{
           position: "absolute",
           top: isMobile ? "140px" : "100px",
@@ -1714,19 +1933,47 @@ function App() {
                 </div>
                 : <Chat chat={chat} onSendMessage={message => {
                   if (wsRef.current) {
-                    setChat([...chat, {
-                      "role": "user",
-                      "content": message
-                    }])
+                    // Check if the message is a text message (string) or an audio message (object)
+                    if (typeof message === 'string') {
+                      // It's a text message, handle it as before
+                      setChat([...chat, {
+                        "role": "user",
+                        "content": message,
+                        "timestamp": Math.floor(Date.now() / 1000)
+                      }]);
+              
+                      wsRef.current.send(JSON.stringify({
+                        "type": "CHAT_MESSAGE",
+                        "message": message
+                      }));
+              
+                      setLoadingChat(true);
+                    } 
+                    else if (message.type === 'AUDIO_MESSAGE') {
+                      // It's an audio message
+                      // Add to chat immediately for UI feedback
+                      setChat([...chat, {
+                        "role": "user",
+                        "type": "AUDIO_MESSAGE",
+                        "audioUrl": message.audioUrl,
+                        "timestamp": Math.floor(Date.now() / 1000)
+                      }]);
+              
+                      // If the audio message has base64 audio data, send it through WebSocket
+                      if (message.audioData) {
+                        wsRef.current.send(JSON.stringify({
+                          "type": "VOICE_MESSAGE",
+                          "audio": message.audioData,
+                          "format": "webm",
+                          "sessionId": sessionId
+                        }));
 
-                    wsRef.current.send(JSON.stringify({
-                      "type": "CHAT_MESSAGE",
-                      "message": message
-                    }))
-
-                    setLoadingChat(true);
+                        setLoadingChat(true);
+                      }
+                    }
                   }
-                }} isLoading={loadingChat} token={token} api={api} onDeleteMessage={handleDeleteMessage} />}
+                }} isLoading={loadingChat} token={token} api={api} onDeleteMessage={handleDeleteMessage}
+                onPlayEmote={handlePlayMessageEmote} />}
               </div>
             </CollapsibleMemoriesPanel>
         </div>

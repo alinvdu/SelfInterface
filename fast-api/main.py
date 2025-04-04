@@ -644,6 +644,57 @@ def generate_viseme_timings(phrase):
 
     return {"phrase": phrase, "visemes": timings}
 
+async def transcribe_audio(audio_base64, format="webm"):
+    """Transcribe audio using OpenAI Whisper API"""
+    try:
+        # Decode the base64 audio
+        audio_data = base64.b64decode(audio_base64)
+        
+        # Save to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{format}") as temp_file:
+            temp_file.write(audio_data)
+            temp_path = temp_file.name
+        
+        try:
+            # Transcribe with Whisper
+            with open(temp_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file
+                )
+            
+            # Return the transcribed text
+            return transcript.text
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    
+    except Exception as e:
+        print(f"Error transcribing audio: {e}")
+        return None
+    
+async def generate_tts_response(text):
+    """Generate TTS audio response (non-streaming)"""
+    try:
+        # Generate TTS with OpenAI
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice="onyx",
+            input=text
+        )
+        
+        # Get audio as bytes
+        audio_bytes = response.content
+        
+        # Encode to base64 for sending over WebSocket
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        return audio_base64
+    
+    except Exception as e:
+        print(f"Error generating TTS response: {e}")
+        return None
 
 # --- WebSocket endpoint ---
 @app.websocket("/ws")
@@ -1022,20 +1073,94 @@ async def websocket_endpoint(websocket: WebSocket):
                     save_conversation_to_firestore(user.get("uid"), session_id, 
                                                 {"role": "user", "content": data["message"]})
 
-                assistant_message = await process_message(None, data["message"], session_id, user, websocket, True)
-
+                assistant_obj = await process_message(None, data["message"], session_id, user, websocket, True)
+                assistant_text = assistant_obj['assistant_text']
                 if user:
                     save_conversation_to_firestore(user.get("uid"), session_id, 
-                                                {"role": "assistant", "content": assistant_message})
+                                                {"role": "assistant", "content": assistant_text})
     
                 chat_history = chat_histories[session_id]
-                chat_history.append({"role": "assistant", "content": assistant_message})
+                chat_history.append({"role": "assistant", "content": assistant_text})
 
-                await websocket.send_json({
-                    "type": "CHAT_MESSAGE",
-                    "message": assistant_message
-                })
+                if "emote_type" in assistant_obj:
+                    await websocket.send_json({
+                        "type": "CHAT_MESSAGE",
+                        "message": assistant_text,
+                        "emote_type": assistant_obj['emote_type']
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "CHAT_MESSAGE",
+                        "message": assistant_text
+                    })
+                    
+            elif data["type"] == "VOICE_MESSAGE":
+                try:
+                    # Extract base64 audio and format
+                    audio_base64 = data.get("audio")
+                    audio_format = data.get("format", "webm")
+                    
+                    if not audio_base64:
+                        await websocket.send_json({
+                            "type": "CHAT_MESSAGE",
+                            "message": "Sorry there was a problem processing your request."
+                        })
+                        continue
+                        
+                    transcription = await transcribe_audio(audio_base64, audio_format)
+                    if not transcription:
+                        await websocket.send_json({
+                            "type": "ERROR",
+                            "message": "Sorry there was a problem processing your request."
+                        })
+                        continue
+                    
+                    assistant_obj = await process_message(None, transcription, session_id, user, websocket, True)
 
+                    assistant_text = assistant_obj['assistant_text']
+                    print('assistant text is', assistant_text)
+                    chat_history = chat_histories[session_id]
+                    chat_history.append({"role": "user", "content": transcription})
+                    chat_history.append({"role": "assistant", "content": assistant_text})
+                    
+                    audio_response = await generate_tts_response(assistant_text)
+                    
+                    # save the audios to the DB to be replayed later if user
+                    
+                    if not audio_response:
+                        if "emote_type" in assistant_obj:
+                            await websocket.send_json({
+                                "type": "CHAT_MESSAGE",
+                                "message": assistant_text,
+                                "emote_type": assistant_obj['emote_type']
+                            })
+                        else:
+                            await websocket.send_json({
+                                "type": "CHAT_MESSAGE",
+                                "message": assistant_text
+                            })
+                        continue
+                    
+                    if "emote_type" in assistant_obj:
+                        await websocket.send_json({
+                            "type": "AUDIO_MESSAGE",
+                            "text": assistant_text,
+                            "audio": audio_response,
+                            "emote_type": assistant_obj.get('emote_type')
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "AUDIO_MESSAGE",
+                            "text": assistant_text,
+                            "audio": audio_response
+                        })
+                except Exception as e:
+                    error_trace = traceback.format_exc()
+                    print(f"Error processing voice message: {e}\n{error_trace}")
+                    await websocket.send_json({
+                        "type": "ERROR",
+                        "message": "Error processing voice message"
+                    })
             elif data["type"] == "rtc_disconnect":
                 session_id = data.get("sessionId")
 
@@ -1835,39 +1960,51 @@ async def process_message(
                 emotion_context = format_emotion_data_for_llm(emotion_data)
                 user_prompt += "\n <EMOTION-DETECTION>:\n You are given the following emotional data from current user turn, use it accordingly: \n" + emotion_context + "<EMOTION-DETECTION-END>"
                 print('Emotional context:', emotion_context)
+        
+        assistant_text = None
+        
+        response_decision = await determine_response_type(user_text)
+        if response_decision.get("response_type") == "express_emote":
+            assistant_text = response_decision.get("message")
+            emote_type = response_decision.get("emote_type", "happy")
+
+            emotion_mapping = {
+                "joy": "happy", "delight": "happy", "happiness": "happy", "excited": "happy",
+                "frustration": "anger", "rage": "anger", "annoyed": "anger",
+                "upset": "disappointment", "depressed": "sad",
+                "shocked": "surprise", "amazed": "surprise"
+            }
+            
+            if emote_type in emotion_mapping:
+                emote_type = emotion_mapping[emote_type]
+                
+            # Ensure emote is one of our supported types
+            if emote_type not in ["happy", "sad", "anger", "disappointment", "surprise"]:
+                emote_type = "happy"
+
+        history.append({"role": "user", "content": user_text})
 
         if not isChat:
-            response_decision = await determine_response_type(user_text)
-            if response_decision.get("response_type") == "express_emote":
-                assistant_text = response_decision.get("message")
-                emote_type = response_decision.get("emote_type", "happy")
+            if not assistant_text:
+                model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+                chat_response = client.chat.completions.create(
+                    model=model_ver,
+                    messages=history
+                )
+                
+                assistant_text = chat_response.choices[0].message.content
 
-                emotion_mapping = {
-                    "joy": "happy", "delight": "happy", "happiness": "happy", "excited": "happy",
-                    "frustration": "anger", "rage": "anger", "annoyed": "anger",
-                    "upset": "disappointment", "depressed": "sad",
-                    "shocked": "surprise", "amazed": "surprise"
-                }
-                
-                if emote_type in emotion_mapping:
-                    emote_type = emotion_mapping[emote_type]
-                    
-                # Ensure emote is one of our supported types
-                if emote_type not in ["happy", "sad", "anger", "disappointment", "surprise"]:
-                    emote_type = "happy"
-                    
-                history.append({"role": "user", "content": user_text})
-                history.append({"role": "assistant", "content": assistant_text})
-                
-                visemes = generate_viseme_timings(assistant_text)
-                await websocket.send_json({
-                    "type": "assistant_voice_message",
-                    "text": assistant_text,
-                    "visemes": visemes
-                })
-                
-                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, emote_type)
-            else:
+            visemes = generate_viseme_timings(assistant_text)
+            await websocket.send_json({
+                "type": "assistant_voice_message",
+                "text": assistant_text,
+                "visemes": visemes
+            })
+            history.append({"role": "assistant", "content": assistant_text})
+
+            await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, emote_type)
+        else:
+            if not assistant_text:
                 history.append({"role": "user", "content": user_prompt})
                 model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
                 chat_response = client.chat.completions.create(
@@ -1876,27 +2013,15 @@ async def process_message(
                 )
                 
                 assistant_text = chat_response.choices[0].message.content
-                visemes = generate_viseme_timings(assistant_text)
-                await websocket.send_json({
-                    "type": "assistant_voice_message",
-                    "text": assistant_text,
-                    "visemes": visemes
-                })
-                history.append({"role": "assistant", "content": assistant_text})
+                
+                return {
+                    "assistant_text": assistant_text
+                }
 
-                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket)
-        else:
-            history.append({"role": "user", "content": user_prompt})
-            model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
-            chat_response = client.chat.completions.create(
-                model=model_ver,
-                messages=history
-            )
-            
-            assistant_text = chat_response.choices[0].message.content
-            history.append({"role": "assistant", "content": assistant_text})
-
-            return assistant_text
+            return {
+                "assistant_text": assistant_text,
+                "emote_type": emote_type
+            }
     except Exception as e:
         error_trace = traceback.format_exc()
         logging.error(f"Unexpected error in process_message: {str(e)}\n{error_trace}")
@@ -1955,7 +2080,7 @@ async def user_conversations_endpoint(user: dict = Depends(verify_token)):
 
 from fastapi.staticfiles import StaticFiles
 
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+# app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 def get_chat_enabled(userId):
     chat_enabled = True

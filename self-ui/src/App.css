@@ -265,3 +265,35 @@ body {
     transform: rotate(360deg);
   }
 }
+
+@keyframes tipCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tipCardExit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+.tipCardEnter {
+  animation: tipCardEnter 0.5s ease forwards;
+}
+
+.tipCardExit {
+  animation: tipCardExit 0.5s ease forwards;
+}
