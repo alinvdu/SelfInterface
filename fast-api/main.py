@@ -304,6 +304,10 @@ async def add_security_headers(request: Request, call_next):
         "frame-ancestors 'none'; "
     )
     response.headers["Content-Security-Policy"] = csp
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = (
+        "accelerometer=(), camera=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(self), payment=(), usb=()"
+    )
 
     return response
 
