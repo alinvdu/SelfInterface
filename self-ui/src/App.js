@@ -1889,10 +1889,17 @@ function App() {
               borderRadius: 16,
               maxWidth: 800,
               height: "100%",
-              overflow: "auto",
-              position: "relative"
+              position: "relative",
+              paddingTop: 40,
+              boxSizing: "border-box",
+              paddingRight: 40
             }}>
-              <PrivacyPolicy />
+              <div style={{
+                height: "100%",
+                overflow: "auto"
+              }}>
+                <PrivacyPolicy />
+              </div>
               <IoCloseCircleOutline onClick={() => {
                 setShowPrivacyPolicyDialog(false);
               }} style={{
