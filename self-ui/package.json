@@ -47,6 +47,6 @@
     "css-select": "4.3.0",
     "postcss": "8.5.1",
     "@babel/runtime": "7.26.10",
-    "@babel/helpers": "7.27.10"
+    "@babel/helpers": "7.27.0"
   }
 }
