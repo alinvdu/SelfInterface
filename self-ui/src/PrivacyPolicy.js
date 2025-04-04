@@ -5,7 +5,6 @@ const PrivacyPolicy = () => {
     maxWidth: '800px',
     margin: '0 auto',
     padding: '32px',
-    paddingTop: 12,
     color: '#e0e0e0', // Light text for dark background
     backgroundColor: 'transparent', // Let it blend with your app’s dark theme
     textAlign: "left"
