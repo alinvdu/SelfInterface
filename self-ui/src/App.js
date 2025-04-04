@@ -3,6 +3,7 @@ import "./App.css";
 import { useAuth } from "./auth/AuthContext";
 import { GiBrain } from "react-icons/gi";
 import { FiBox } from "react-icons/fi";
+import { IoCloseCircleOutline } from "react-icons/io5";
 
 import { motion, AnimatePresence } from "framer-motion"; // You'll need to install framer-motion
 import { RxAvatar } from "react-icons/rx";
@@ -30,6 +31,7 @@ import LoadingDots from "./components/LoadingDots.js";
 import { useProgress } from "@react-three/drei";
 import Overlay from "./components/Overlay.js";
 import { BsArrowRight } from "react-icons/bs";
+import PrivacyPolicy from "./PrivacyPolicy.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
@@ -415,6 +417,8 @@ function App() {
   const [showIntroMode, setShowIntroMode] = useState(false);
   const [showLoginView, setShowLoginView] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
+
+  const [showPrivacyPolicyDialog, setShowPrivacyPolicyDialog] = useState(false);
 
   const handleStartApp = () => {
     setIsModelVisible(false)
@@ -1272,7 +1276,8 @@ function App() {
           }} navigateBack={() => {
             setShowCreateAccount(false);
             setShowLoginView(false);
-          }} />}
+          }}
+          setShowPrivacyPolicyDialog={setShowPrivacyPolicyDialog}/>}
         </AnimatePresence>
       )}
       <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
@@ -1850,6 +1855,55 @@ function App() {
             />
           </div>}
           </>)}
+          {showIntroMode && <div style={{
+            position: "absolute",
+            bottom: 20,
+            right: 20,
+            background: "rgba(0, 0, 0, 0.5)",
+            padding: "5px 10px",
+            borderRadius: 8,
+            fontSize: 14
+          }}>
+            © 2025 SelfAI.live • <span style={{
+              cursor: "pointer"
+            }} onClick={() => {
+              setShowPrivacyPolicyDialog(true)
+            }}>Privacy Policy</span>
+          </div>}
+          {showPrivacyPolicyDialog && <div style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            top: 0,
+            zIndex: 99999,
+            background: "rgba(0, 0, 0, 0.45",
+            padding: 25,
+            boxSizing: "border-box",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          }}>
+            <div style={{
+              background: "rgba(50, 50, 50, 1)",
+              borderRadius: 16,
+              maxWidth: 800,
+              height: "100%",
+              overflow: "auto",
+              position: "relative"
+            }}>
+              <PrivacyPolicy />
+              <IoCloseCircleOutline onClick={() => {
+                setShowPrivacyPolicyDialog(false);
+              }} style={{
+                fontSize: 32,
+                position: "absolute",
+                top: 10,
+                right: 10,
+                cursor: "pointer"
+              }} />
+            </div>
+          </div>}
       </div>
   );
 }

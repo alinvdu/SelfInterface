@@ -41,7 +41,7 @@ const AssistantMessage = ({ text, extraStyles = {} }) => (
   </div>
 );
 
-const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView }) => {
+const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView, setShowPrivacyPolicyDialog }) => {
   // Slider state
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -673,13 +673,25 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     >
                       {isLoading ? 'Registering...' : 'Register'}
                     </button>
+
+                    <div style={{
+                      marginTop: "0.5rem"
+                    }}>
+                      By registering, you agree with our <span style={{
+                        cursor: "pointer",
+                        color: "#4285F4",
+                        fontWeight: "bold"
+                      }} onClick={() => {
+                        setShowPrivacyPolicyDialog(true)
+                      }}>Privacy Policy</span>.
+                    </div>
                     
                     {/* Already have an account text and button */}
                     <div style={{
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      marginTop: "0.5rem"
+                      marginTop: "0.8rem"
                     }}>
                       <div style={{ color: "white", marginRight: "0.5rem" }}>
                         Already have an account?
@@ -1069,6 +1081,19 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     >
                       Create account <BsArrowRight style={{ marginLeft: "0.5rem", fontSize: "1.2rem" }} />
                     </button>
+                  </div>
+                  <div style={{
+                    marginTop: "1rem",
+                    width: "100%",
+                    textAlign: "left"
+                  }}>
+                    By signing in, you agree with our <span style={{
+                      cursor: "pointer",
+                      color: "#4285F4",
+                      fontWeight: "bold"
+                    }} onClick={() => {
+                      setShowPrivacyPolicyDialog(true)
+                    }}>Privacy Policy</span>.
                   </div>
                 </form>
               </>
