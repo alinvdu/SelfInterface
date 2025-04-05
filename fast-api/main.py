@@ -2086,7 +2086,7 @@ async def user_conversations_endpoint(user: dict = Depends(verify_token)):
 
 from fastapi.staticfiles import StaticFiles
 
-# app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 def get_chat_enabled(userId):
     chat_enabled = True
