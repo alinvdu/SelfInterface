@@ -1118,13 +1118,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         continue
                     
                     assistant_obj = await process_message(None, transcription, session_id, user, websocket, True)
-
                     assistant_text = assistant_obj['assistant_text']
-                    print('assistant text is', assistant_text)
-                    chat_history = chat_histories[session_id]
-                    chat_history.append({"role": "user", "content": transcription})
-                    chat_history.append({"role": "assistant", "content": assistant_text})
-                    
                     audio_response = await generate_tts_response(assistant_text)
                     
                     # save the audios to the DB to be replayed later if user
@@ -1950,7 +1944,7 @@ async def process_message(
                     )
                     user_prompt += "You are given the following memories to support this conversation: \n" + retrieved_memories_text
 
-        user_prompt += "\n Respond to the following user message: " + user_text
+        user_prompt += f"\n\"{user_text.strip()}\""
 
         if session_state and session_state.hume_ws:
             await session_state.hume_ws.wait_for_processing()
@@ -1967,6 +1961,7 @@ async def process_message(
         hasEmote = False
         
         response_decision = await determine_response_type(user_text)
+        print('response decision:', response_decision)
         if response_decision.get("response_type") == "express_emote":
             assistant_text = response_decision.get("message")
             emote_type = response_decision.get("emote_type", "happy")
@@ -2013,7 +2008,6 @@ async def process_message(
                 await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket)
         else:
             if not assistant_text:
-                history.append({"role": "user", "content": user_prompt})
                 model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
                 chat_response = client.chat.completions.create(
                     model=model_ver,
@@ -2021,11 +2015,12 @@ async def process_message(
                 )
                 
                 assistant_text = chat_response.choices[0].message.content
-                
+                history.append({"role": "assistant", "content": assistant_text})
                 return {
                     "assistant_text": assistant_text
                 }
-
+            else:
+                assistant_text += "Click the emote button to see it."
             return {
                 "assistant_text": assistant_text,
                 "emote_type": emote_type
