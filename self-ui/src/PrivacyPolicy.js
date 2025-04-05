@@ -151,6 +151,7 @@ const PrivacyPolicy = () => {
           <li>OpenAI - data about conversation history, text based on vector embeddings are shared with OpenAI for inference. Voice messages are shared for transcription.</li>
           <li>DeepGram - voice data is shared for live conversations for transcription.</li>
           <li>HumeAI - face data & voice data shared for emotion analysis.</li>
+          <li>Metered.ca - WebRTC, the technology behind real time voice communication, relies on TURN server to relay real-time information from the user to the API. We use secure TURN server in order to achieve this.</li>
         </ul>
       </section>
 
