@@ -215,29 +215,6 @@ body {
   transform: translateX(15%);
 }
 
-.model-loader-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: radial-gradient(circle at center, rgba(15, 15, 15, 0.65) 10%, rgba(30, 30, 30, 1) 100%);
-  backdrop-filter: blur(8px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.model-loader-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  color: white;
-}
-
 .cursor {
   display: inline-block;
   animation: blinkCursor 0.7s infinite;

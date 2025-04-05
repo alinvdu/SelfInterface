@@ -56,13 +56,21 @@ const DEFAULT_MODEL = AVAILABLE_MODELS[0];
 
 function ModelLoader() {
   return (
-    <div className="model-loader-container">
-      <div className="model-loader-content">
+    <div style={{
+      width: "100%",
+      height: "100%",
+      position: "absolute",
+      top: 0,
+      left: 0
+    }}>
       <div style={{
         position: "relative",
         display: "flex",
         flexDirection: "row",
-        alignItems: "center"
+        alignItems: "center",
+        width: "100%",
+        height: "100%",
+        justifyContent: "center"
       }}>
         <LoadingDiv
             isLoading 
@@ -81,7 +89,6 @@ function ModelLoader() {
           marginLeft: 15
         }}>Loading Graphics...</span>
       </div>
-      </div>
     </div>
   );
 }
@@ -94,16 +101,12 @@ function BackgroundScene({
   setCurrentEmote, 
   isIntroMode = false,
   onModelLoaded,
-  isModelVisible=true,
-  isSmallSize=false
+  isModelVisible=true
 }) {
   return (
     <Canvas
       style={{
-        position: "fixed",
-        top: 0,
-        right: 0,
-        width: isIntroMode ? isSmallSize ? "0%" : "45%" : "100%",
+        width: "100%",
         height: "100%",
         background: "transparent",
         zIndex: 0,
@@ -1367,8 +1370,7 @@ function App() {
         height: "100vh",
       }}
     >
-      {modelLoading && <ModelLoader />}
-      {modelLoaded && (
+      {(
         <AnimatePresence>
           {showIntroMode && <Overlay smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
             setShowCreateAccount(false)
@@ -1383,7 +1385,22 @@ function App() {
           setShowPrivacyPolicyDialog={setShowPrivacyPolicyDialog}/>}
         </AnimatePresence>
       )}
-      <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
+      <div style={{
+        position: "fixed",
+        top: 0,
+        right: 0,
+        width: showIntroMode ? isSmallSize ? "0%" : "45%" : "100%",
+        height: "100%",
+      }}>
+          <div style={{
+            position: "relative",
+            width: "100%",
+            height: "100%"
+          }}>
+          <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
+          {modelLoading && <ModelLoader />}
+        </div>
+      </div>
       {showIntroMode && !showLoginView && !showCreateAccount && !modelLoading ? !token ? <div style={{
         position: "absolute",
         top: smallerThan850 ? 28 : 35,
