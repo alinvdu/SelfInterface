@@ -416,21 +416,20 @@ function App() {
   const modelDropdownRef = useRef(null);
   const [isModelVisible, setIsModelVisible] = useState(true);
 
-  const [showIntroMode, setShowIntroMode] = useState(false);
+  const [showIntroMode, setShowIntroMode] = useState(true);
   const [showLoginView, setShowLoginView] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
-  const [initialAppearance, setInitialAppearance] = useState(true);
 
   const [showTipCard, setShowTipCard] = useState(false);
   const progressIntervalRef = useRef(null);
   const tipShownRef = useRef(false);
 
   useEffect(() => {
-    if (!showIntroMode && !token && !conversing && !tipShownRef.current) {
+    if (!showIntroMode && !token && !conversing && !tipShownRef.current && !loading) {
       setShowTipCard(true);
       tipShownRef.current = true;
     }
-  }, [showIntroMode, token, conversing]);
+  }, [showIntroMode, token, conversing, loading]);
 
   useEffect(() => {
     if (showTipCard) {
@@ -463,63 +462,6 @@ function App() {
       };
     }
   }, [showTipCard]);
-
-  useEffect(() => {
-    // Show tip card when intro mode is hidden and user is not logged in
-    if (!showIntroMode && !token && !conversing && !tipShownRef.current) {
-      // Show the tip card
-      setShowTipCard(true);
-      
-      // Start the 30-second timer
-      const startTime = Date.now();
-      const duration = 20000; // 30 seconds
-      
-      // Clear any existing interval
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-      
-      // Update the progress bar every 100ms
-      progressIntervalRef.current = setInterval(() => {
-        const elapsedTime = Date.now() - startTime;
-        const progressPercent = (elapsedTime / duration) * 100;
-        
-        // Update the width of the progress bar directly via DOM
-        const progressBar = document.getElementById('tip-progress-bar');
-        if (progressBar) {
-          progressBar.style.width = `${Math.min(progressPercent, 100)}%`;
-        }
-        
-        // When time is up, hide the card and clear the interval
-        if (elapsedTime >= duration) {
-          clearInterval(progressIntervalRef.current);
-          setShowTipCard(false);
-        }
-      }, 100);
-      
-      // Cleanup function
-      return () => {
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-        }
-      };
-    } else if (!tipShownRef.current) {
-      // Hide the tip card and clear the interval
-      setShowTipCard(false);
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-    }
-  }, [showIntroMode, token, conversing]);
-  
-  // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-    };
-  }, []);
 
   const [showPrivacyPolicyDialog, setShowPrivacyPolicyDialog] = useState(false);
 
@@ -950,8 +892,8 @@ function App() {
   // Combined new_session and proactive message call.
   useEffect(() => {
     if (!loading) {
-      if (!token) {
-        setShowIntroMode(true);
+      if (token) {
+        setShowIntroMode(false);
       }
 
       const createSession = async () => {
