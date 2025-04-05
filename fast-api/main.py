@@ -298,11 +298,13 @@ async def add_security_headers(request: Request, call_next):
         "worker-src 'self' blob:; "
         "connect-src 'self' https://www.gstatic.com https://accounts.google.com https://*.googleapis.com blob:; "
         "img-src 'self' blob: data:; "
+        "media-src 'self' blob:; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "frame-src 'self' https://self-be400.firebaseapp.com; "
         "frame-ancestors 'none'; "
     )
+
     response.headers["Content-Security-Policy"] = csp
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = (
