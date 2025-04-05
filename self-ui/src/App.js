@@ -30,7 +30,6 @@ import Switch from "./components/Switch.js";
 
 import { FiUser } from "react-icons/fi";
 import LoadingDots from "./components/LoadingDots.js";
-import { useProgress } from "@react-three/drei";
 import Overlay from "./components/Overlay.js";
 import { BsArrowRight } from "react-icons/bs";
 import PrivacyPolicy from "./PrivacyPolicy.js";
@@ -1401,7 +1400,7 @@ function App() {
           {modelLoading && <ModelLoader />}
         </div>
       </div>
-      {showIntroMode && !showLoginView && !showCreateAccount && !modelLoading ? !token ? <div style={{
+      {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
         position: "absolute",
         top: smallerThan850 ? 28 : 35,
         right: smallerThan850 ? 15 : 50,
@@ -1490,7 +1489,7 @@ function App() {
         </div>
       </div> : null}
       {/* <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} /> */}
-      {!showIntroMode && modelLoaded && (
+      {!showIntroMode && (
       <>
         <div style={{
             position: "absolute",
