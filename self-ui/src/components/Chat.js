@@ -542,7 +542,7 @@ const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage, onP
               maxHeight: "120px",
               outline: "none",
               fontFamily: "inherit",
-              fontSize: "15px"
+              fontSize: isMobile ? "16px" : "15px"
             }}
           />
         )}
