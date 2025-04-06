@@ -180,7 +180,20 @@ function App() {
         // iceTransportPolicy: "relay",
         iceServers: [
           {
+            urls: "stun:stun.relay.metered.ca:80",
+          },
+          {
+            urls: "turn:standard.relay.metered.ca:80",
+            username: process.env.REACT_APP_TURN_SERVER_USERNAME,
+            credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
+          },
+          {
             urls: "turn:standard.relay.metered.ca:80?transport=tcp",
+            username: process.env.REACT_APP_TURN_SERVER_USERNAME,
+            credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
+          },
+          {
+            urls: "turn:standard.relay.metered.ca:443",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
@@ -189,7 +202,7 @@ function App() {
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
-      ],
+      ]
       });
 
       localStream.getTracks().forEach(track => {
@@ -1397,7 +1410,7 @@ function App() {
             height: "100%"
           }}>
           <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
-          {modelLoading && <ModelLoader />}
+          {modelLoading && !isSmallSize && <ModelLoader />}
         </div>
       </div>
       {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
