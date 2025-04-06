@@ -2004,7 +2004,7 @@ function App() {
                       }
                     }
                   }
-                }} isLoading={loadingChat} token={token} api={api} onDeleteMessage={handleDeleteMessage}
+                }} isLoading={loadingChat} token={token} api={api} onDeleteMessage={handleDeleteMessage} isMobile={isMobile}
                 onPlayEmote={handlePlayMessageEmote} />}
               </div>
             </CollapsibleMemoriesPanel>

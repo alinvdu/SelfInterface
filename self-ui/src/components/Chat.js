@@ -82,7 +82,7 @@ const AudioMessage = ({ audioUrl, index, role }) => {
   );
 };
 
-const ChatMessage = ({ message, token, api, onDeleteMessage, index, onPlayEmote }) => {
+const ChatMessage = ({ message, token, api, onDeleteMessage, index, onPlayEmote, isMobile }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const [showThreeDots, setShowThreeDots] = useState(false);
@@ -262,7 +262,7 @@ const Tooltip = ({ text, children, show }) => {
   );
 };
 
-const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage, onPlayEmote }) => {
+const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage, onPlayEmote, isMobile }) => {
   const [newMessage, setNewMessage] = useState("");
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -462,7 +462,8 @@ const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage, onP
       token={token} 
       message={message} 
       index={index} 
-      onPlayEmote={onPlayEmote} 
+      onPlayEmote={onPlayEmote}
+      isMobile={isMobile}
     />;
   };
 
