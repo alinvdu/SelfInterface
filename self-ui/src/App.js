@@ -439,6 +439,14 @@ function App() {
   const progressIntervalRef = useRef(null);
   const tipShownRef = useRef(false);
 
+  const [isFirefox, setIsFirefox] = useState(false);
+  const [showFirefoxTooltip, setShowFirefoxTooltip] = useState(false);
+
+  useEffect(() => {
+    const isFirefoxBrowser = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+    setIsFirefox(isFirefoxBrowser);
+  }, []);
+
   useEffect(() => {
     if (!showIntroMode && !token && !conversing && !tipShownRef.current && !loading) {
       setShowTipCard(true);
@@ -1099,10 +1107,16 @@ function App() {
           cursor: 'pointer',
           padding: isMobile ? 6 : 12,
           position: 'relative' // Added for dropdown positioning
-        }} onClick={(e) => {
-          e.stopPropagation(); // Prevent body click from closing it immediately
-          setIsCallDropdownVisible(true); // Show dropdown instead of dialog
-        }}>
+        }}
+        onClick={(e) => {
+          if (!isFirefox) {
+            e.stopPropagation();
+            setIsCallDropdownVisible(true);
+          }
+        }}
+        onMouseEnter={() => isFirefox && setShowFirefoxTooltip(true)}
+        onMouseLeave={() => isFirefox && setShowFirefoxTooltip(false)}
+        >
           <LoadingDiv
             isLoading={calling} 
             duration={0.75} 
@@ -1118,6 +1132,46 @@ function App() {
             <HiOutlinePhone style={{ fontSize: 21 }} />
           </LoadingDiv>
           <div style={{ marginLeft: isMobile ? 7 : "1rem", marginRight: "0.5rem", fontSize: isMobile ? "15px" : "18px" }}>{calling ? "Calling Atlas..." : "Let's Connect"}</div>
+
+          {/* Firefox Warning Tooltip */}
+          {isFirefox && showFirefoxTooltip && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                marginBottom: '10px',
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                color: 'white',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '14px',
+                maxWidth: '250px',
+                textAlign: 'center',
+                zIndex: 1000,
+                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
+                pointerEvents: 'none',
+                width: 300
+              }}
+            >
+              Unfortunately live WebRTC connection is not available for Firefox at this moment
+              {/* Tooltip arrow */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 0,
+                  height: 0,
+                  borderLeft: '8px solid transparent',
+                  borderRight: '8px solid transparent',
+                  borderTop: '8px solid rgba(0, 0, 0, 0.85)',
+                }}
+              />
+            </div>
+          )}
 
           {/* Call Options Dropdown */}
           {isCallDropdownVisible && (
