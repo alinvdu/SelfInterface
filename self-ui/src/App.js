@@ -1077,6 +1077,10 @@ function App() {
     }
   };
   
+  const shouldShowModelLoader = () => 
+    modelLoading && isSmallSize 
+      ? !showIntroMode 
+      : modelLoading;
 
   const renderConversing = () => {
     if (!isWsOpen) {
@@ -1265,8 +1269,8 @@ function App() {
         backgroundColor: 'rgba(0, 0, 0, 0.25)',
         color: 'white',
         border: '1px solid rgba(255, 255, 255, 0.4)',
-        "backdrop-filter": "blur(8px)",
-        "-webkit-backdrop-filter": "blur(8px)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
       }}>
         <FiUser fontSize={21} style={{marginTop: -1}} />
       </div>
@@ -1274,8 +1278,8 @@ function App() {
         backgroundColor: 'rgba(0, 0, 0, 0.25)',
         color: 'white',
         border: '1px solid rgba(255, 255, 255, 0.4)',
-        "backdrop-filter": "blur(8px)",
-        "-webkit-backdrop-filter": "blur(8px)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
         padding: "6px 8px",
         borderRadius: 8,
         maxWidth: "70%",
@@ -1351,8 +1355,8 @@ function App() {
       <div style={{
         backgroundColor: 'rgba(255, 255, 255, 0.35)',
         border: '1px solid rgba(255, 255, 255, 0.3)',
-        "backdrop-filter": "blur(8px)",
-        "-webkit-backdrop-filter": "blur(8px)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
         padding: "6px 8px",
         borderRadius: 8,
         flex: 1,
@@ -1379,7 +1383,7 @@ function App() {
       style={{
         position: "relative",
         background: "transparent",
-        height: "100vh",
+        height: "100%",
       }}
     >
       {(
@@ -1410,7 +1414,7 @@ function App() {
             height: "100%"
           }}>
           <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
-          {modelLoading && !isSmallSize && <ModelLoader />}
+          {shouldShowModelLoader() && <ModelLoader />}
         </div>
       </div>
       {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
@@ -1510,8 +1514,8 @@ function App() {
             left: "16px",
             zIndex: 2,
             background: 'rgba(0, 0, 0, 0.25)',
-            "backdrop-filter": "blur(8px)",
-            "-webkit-backdrop-filter": "blur(8px)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
             border: "1px solid rgba(255, 255, 255, 0.35)",
             borderRadius: "21px",
             color: "white",
@@ -1704,8 +1708,8 @@ function App() {
             right: "16px",
             zIndex: 2,
             background: token ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)',
-            "backdrop-filter": "blur(15px)",
-            "-webkit-backdrop-filter": "blur(15px)",
+            backdropFilter: "blur(15px)",
+            WebkitBackdropFilter: "blur(15px)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
             borderRadius: "26px",
             color: "white",
@@ -2052,8 +2056,8 @@ function App() {
           <div
             style={{
               zIndex: 2,
-              "backdrop-filter": "blur(8px)",
-              "-webkit-backdrop-filter": "blur(8px)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
               background: 'rgba(0, 0, 0, 0.25)',
               border: "1px solid rgba(255, 255, 255, 0.4)",
               borderRadius: "46px",
@@ -2089,8 +2093,8 @@ function App() {
             </div>
             {conversing && (
               <div style={{
-                  "backdrop-filter": "blur(8px)",
-                  "-webkit-backdrop-filter": "blur(8px)",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
                   background: 'rgba(0, 0, 0, 0.25)',
                   border: "1px solid rgba(255, 255, 255, 0.4)",
                   padding: 12,

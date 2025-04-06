@@ -594,7 +594,8 @@ const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage, onP
               background: "rgba(255, 0, 0, 0.5)",
               color: "white",
               cursor: "pointer",
-              transition: "background-color 0.2s"
+              transition: "background-color 0.2s",
+              padding: 0
             }}
           >
             <ImCross size={12} />
@@ -616,7 +617,8 @@ const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage, onP
               cursor: "pointer",
               transition: "background-color 0.2s",
               fontSize: isCountingDown ? "16px" : "inherit",
-              fontWeight: isCountingDown ? "bold" : "normal"
+              fontWeight: isCountingDown ? "bold" : "normal",
+              padding: 0
             }}
           >
             {isCountingDown ? (
