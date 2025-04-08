@@ -8,17 +8,16 @@ import asyncio
 from datetime import datetime
 import re
 import json
+from websockets.client import connect
 from typing import Optional
 import traceback
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 from pinecone import Pinecone
 from dotenv import load_dotenv
 import time
-from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
-
 import datetime as dt
 
 import logging
@@ -74,39 +73,6 @@ from av.audio.resampler import AudioResampler
 # Example usage:
 # debug_info = analyze_audio_chunk(openai_chunk)
 # print(debug_info)
-
-def convert_openai_pcm_to_48k(pcm_data):
-    """
-    Convert OpenAI PCM data (24kHz, 16-bit signed, little-endian) to 48kHz using pydub.
-    Skip processing entirely if the input is empty.
-    """
-    from pydub import AudioSegment
-    
-    # Skip processing if empty
-    if not pcm_data or len(pcm_data) == 0:
-        return None  # Return None to indicate chunk should be skipped
-    
-    # Ensure even number of bytes
-    if len(pcm_data) % 2 != 0:
-        pcm_data = pcm_data[:-1]
-        
-        # If trimming made it empty, skip it
-        if len(pcm_data) == 0:
-            return None
-    
-    # Create AudioSegment from raw PCM bytes
-    audio_24k = AudioSegment(
-        data=pcm_data,
-        sample_width=2,    # 16-bit = 2 bytes per sample
-        frame_rate=24000,  # in Hz
-        channels=1         # mono
-    )
-    
-    # Resample to 48kHz
-    audio_48k = audio_24k.set_frame_rate(48000)
-    
-    # Return raw PCM data
-    return audio_48k.raw_data
 
 END_OF_STREAM_SENTINEL = object()
 class PCM24kAudioTrack(MediaStreamTrack):
@@ -281,7 +247,7 @@ firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
 
 @app.middleware("http")
@@ -312,9 +278,6 @@ async def add_security_headers(request: Request, call_next):
     )
 
     return response
-
-DG_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
-dg_client = DeepgramClient(DG_API_KEY)
 
 peer_connections = {}  # Store RTCPeerConnection per session
 
@@ -697,6 +660,184 @@ async def generate_tts_response(text):
     except Exception as e:
         print(f"Error generating TTS response: {e}")
         return None
+    
+async def connect_to_openai_ws():
+    uri = "wss://api.openai.com/v1/realtime?intent=transcription"
+    headers = {
+        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+        "OpenAI-Beta": "realtime=v1"
+    }
+    ws = await connect(uri, extra_headers=headers)
+
+    # Send the start message
+    await ws.send(json.dumps({
+        "type": "transcription_session.update",
+        "session": {
+            "input_audio_format": "pcm16",
+            "input_audio_transcription": {
+                "model": "gpt-4o-transcribe",
+                "prompt": "",
+                "language": "en"
+            },
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": 0.5,
+                "prefix_padding_ms": 300,
+                "silence_duration_ms": 1500
+            },
+            "input_audio_noise_reduction": {
+                "type": "near_field"
+            },
+            "include": [
+                "item.input_audio_transcription.logprobs"
+            ]
+        }
+    }))
+
+    return ws
+
+import numpy as np
+import time
+import asyncio
+
+async def handle_audio_and_openai_transcription(currentTrack, currentWs, session_id, session_state, websocket):
+    ws = currentWs
+    resampler_48_to_16 = AudioResampler(format="s16", layout="mono", rate=24000)
+    speaking = False
+    MIN_RECONNECT_INTERVAL = 120
+    VOICE_AMPLITUDE_THRESHOLD = 1200
+
+    async def reconnect_ws():
+        await ws.close()
+        new_ws = await connect_to_openai_ws()
+        return new_ws
+    
+    async def handle_audio_data_for_emotion(session_state, audio_bytes):
+        """Process audio data for emotion analysis"""
+        try:
+            if not session_state.hume_ws.is_capturing_emotion:
+                return
+                
+            # Add to buffer
+            session_state.audio_buffer.append(audio_bytes)
+            
+            # Check if it's time to process
+            current_time = time.time()
+            if (session_state.last_audio_chunk_time is None or 
+                current_time - session_state.last_audio_chunk_time >= session_state.audio_capture_interval):
+                
+                if session_state.audio_buffer:
+                    audio_data = b''.join(session_state.audio_buffer)
+                    # Send to Hume
+                    await session_state.hume_ws.send_audio(audio_data)
+                    
+                    # Clear buffer and update timestamp
+                    session_state.audio_buffer = []
+                    session_state.last_audio_chunk_time = current_time
+                    
+                    logging.info(f"Sent audio chunk of {len(audio_data)} bytes at {current_time}")
+        except Exception as e:
+            logging.error(f"Error in audio emotion processing: {str(e)}\n{traceback.format_exc()}")
+
+    async def receive_loop():
+        nonlocal speaking
+        try:
+            async for message in ws:
+                data = json.loads(message)
+                if data.get("type") == "error":
+                    logging.error("Error occurred on data transcription by OpenAI: %s", data.get("message"))
+                elif data.get("type") == "input_audio_buffer.speech_started":
+                    speaking = True
+                    # Cancel streaming as soon as a word is detected
+                    if hasattr(session_state, "fill_task"):
+                        session_state.fill_task.cancel()
+                    session_state.current_tts_event = None
+                    if hasattr(session_state, "audio_track"):
+                        session_state.audio_track.clear_queues()
+                    
+                    if not session_state.hume_ws.is_capturing_emotion:
+                        session_state.hume_ws.is_capturing_emotion = True
+                        session_state.audio_buffer = []
+                        session_state.last_audio_chunk_time = time.time()
+                        # reinitialize facial and audio emotion data
+                        if session_state.hume_ws:
+                            session_state.hume_ws.start_emotion_capture()
+
+                        session_state.last_face_capture = time.time()
+                        session_state.emotion_capture_start_time = time.time()
+                        logging.info(f"Session {session_id}: Started emotion capture")
+
+                    await websocket.send_json({"type": "voice_message_start"})
+                elif data.get("type") == "conversation.item.input_audio_transcription.completed":
+                    speaking = False
+                    text = data.get("transcript", "").strip()
+                    if text:
+                        await websocket.send_json({"type": "voice_message_start"})
+                        session_state.hume_ws.is_capturing_emotion = False
+
+                        print(f"[OpenAI Final Transcript]: {text}")
+                        await websocket.send_json({"type": "user_voice_message", "text": text})
+                        if hasattr(session_state, "fill_task"):
+                            session_state.fill_task.cancel()
+                        session_state.current_tts_event = None
+                        if hasattr(session_state, "audio_track"):
+                            session_state.audio_track.clear_queues()
+                        asyncio.create_task(process_message(session_state.pc, text, session_id, None, websocket))
+        except Exception as e:
+            logging.error("Session %s: Receive loop error: %s\n%s", session_id, e, traceback.format_exc())
+
+    async def send_audio_loop():
+        nonlocal ws, speaking  # Declare ws as nonlocal to access and modify the outer ws
+        loop = asyncio.get_running_loop()
+        last_reconnect = time.time()
+        receive_task = asyncio.create_task(receive_loop())
+
+        try:
+            while True:
+                frame = await currentTrack.recv()
+                resampled_frames = await loop.run_in_executor(executor, resampler_48_to_16.resample, frame)
+                if resampled_frames is None:
+                    break
+
+                for frame in resampled_frames:
+                    pcm_samples = frame.to_ndarray()
+                    max_amplitude = np.max(np.abs(pcm_samples))
+                    pcm_16k = pcm_samples.tobytes()
+                    
+                    if session_state.hume_ws.is_capturing_emotion:
+                        asyncio.create_task(
+                            handle_audio_data_for_emotion(session_state, pcm_16k)
+                        )
+
+                    # Reconnect only during silence after minimum interval
+                    current_time = time.time()
+                    if (current_time - last_reconnect >= MIN_RECONNECT_INTERVAL and 
+                        not speaking and max_amplitude < VOICE_AMPLITUDE_THRESHOLD):
+                            receive_task.cancel()
+                            try:
+                                await receive_task
+                            except asyncio.CancelledError:
+                                pass
+                            ws = await reconnect_ws()
+                            last_reconnect = time.time()
+                            receive_task = asyncio.create_task(receive_loop())
+                    
+                    # Send audio if in sending mode
+                    encoded_audio = base64.b64encode(pcm_16k).decode('utf-8')
+                    await ws.send(json.dumps({
+                        "type": "input_audio_buffer.append",
+                        "audio": encoded_audio
+                    }))
+
+        except MediaStreamError:
+            logging.info("Session %s: Client disconnected", session_id)
+        except Exception as e:
+            logging.error("Send audio loop error: %s\n%s", e, traceback.format_exc())
+        finally:
+            await ws.close()
+
+    send_task = asyncio.create_task(send_audio_loop())
+    await send_task
 
 # --- WebSocket endpoint ---
 @app.websocket("/ws")
@@ -784,207 +925,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                 async def handle_audio_track(track, session_id, session_state, websocket):
                     try:
-                        dg_connection = dg_client.listen.websocket.v("1")
+                        openai_ws = await connect_to_openai_ws()
                     except Exception as e:
-                        logging.error("Session %s: Failed to create Deepgram connection: %s\n%s", 
+                        logging.error("Session %s: Failed to create OpenAI WS connection: %s\n%s", 
                                     session_id, e, traceback.format_exc())
                         return
-                        
-                    # Handler for transcript results
-                    def on_transcript(self, result, **kwargs):
-                        result_dict = result.to_dict()
-                        current_transcript = result_dict['channel']['alternatives'][0]['transcript']
-                        current_transcript = (current_transcript or "").strip()
 
-                        if current_transcript:
-                            # cancel streaming as soon as a word is detected
-                            if hasattr(session_state, "fill_task"):
-                                session_state.fill_task.cancel()
-                                session_state.current_tts_event = None
-                                session_state.audio_track.clear_queues()
-                        
-                        if current_transcript and result_dict['is_final']:
-                            # handle accumulator
-                            session_state.sentence_accumulator.append(current_transcript)
-                            # session_state.speech_final_flag = speech_final_flag
-                        if current_transcript:
-                            async def send_voice_update():
-                                await websocket.send_json({"type": "voice_message_start"})
-
-                            # Run it in the existing event loop
-                            ui_update = asyncio.run_coroutine_threadsafe(
-                                send_voice_update(),
-                                session_state.loop
-                            )
-                            ui_update.result()
-                            
-                            if current_transcript and not session_state.hume_ws.is_capturing_emotion:
-                                session_state.hume_ws.is_capturing_emotion = True
-                                session_state.audio_buffer = []
-                                session_state.last_audio_chunk_time = time.time()
-                                # reinitialize facial and audio emotion data
-                                if session_state.hume_ws:
-                                    session_state.hume_ws.start_emotion_capture()
-
-                                session_state.last_face_capture = time.time()
-                                session_state.emotion_capture_start_time = time.time()
-                                logging.info(f"Session {session_id}: Started emotion capture")
-                            
-                    # We skip is final for now because it doesn't help much and it breaks apart sentences
-                        # if speech_final_flag and current_transcript:
-                        #     print('Full sentence is: ', current_transcript)
-
-                        #     async def send_user_voice_update(user_text):
-                        #         await websocket.send_json({
-                        #             "type": "user_voice_message",
-                        #             "text": user_text
-                        #         })
-                        #     ui_update = asyncio.run_coroutine_threadsafe(
-                        #         send_user_voice_update(current_transcript),
-                        #         session_state.loop
-                        #     )
-
-                        #     ui_update.result()
-
-                        #     asyncio.run_coroutine_threadsafe(
-                        #         process_message(session_state.pc, current_transcript, session_id, user, websocket),
-                        #         session_state.loop
-                        #     
-                        
-                    # Handler for UtteranceEnd events
-                    def on_utterance_end(result, **kwargs):
-                        # if not session_state.speech_final_flag and len(session_state.sentence_accumulator):
-                        if len(session_state.sentence_accumulator):
-                            full_sentence = merge_transcripts(session_state.sentence_accumulator)
-                            print('Utterance end full sentence: ', full_sentence)
-                            
-                            session_state.hume_ws.is_capturing_emotion = False
-
-                            async def send_user_voice_update(user_text):
-                                await websocket.send_json({
-                                    "type": "user_voice_message",
-                                    "text": user_text
-                                })
-                            ui_future = asyncio.run_coroutine_threadsafe(
-                                send_user_voice_update(full_sentence),
-                                session_state.loop
-                            )
-
-                            ui_future.result()
-                            
-                            asyncio.run_coroutine_threadsafe(
-                                process_message(session_state.pc, full_sentence, session_id, user, websocket),
-                                session_state.loop
-                            )
-
-                        # session_state.speech_final_flag=False
-                        session_state.sentence_accumulator=[]
-
-                    # Register event handlers
-                    dg_connection.on(LiveTranscriptionEvents.Transcript, on_transcript)
-                    dg_connection.on(LiveTranscriptionEvents.UtteranceEnd, on_utterance_end)
-
-                    # Set up Deepgram options matching your audio format.
-                    options = LiveOptions(
-                        model="nova-2",
-                        language="multi",
-                        punctuate=True,
-                        encoding="linear16",  # Assuming your PCM data is in linear16 format.
-                        sample_rate=48000,
-                        channels=2,
-                        interim_results=True,
-                        utterance_end_ms="2000",
-                        endpointing=2000
+                    asyncio.create_task(
+                        handle_audio_and_openai_transcription(track, openai_ws, session_id, session_state, websocket)
                     )
 
-                    if not dg_connection.start(options):
-                        logging.error("Session %s: Failed to start Deepgram connection", session_id)
-                        return
-
-                    # Create a thread-safe queue for audio data.
-                    
-                    audio_queue = queue.Queue()
-
-                    # Background thread that sends audio data from the queue to Deepgram.
-                    def send_audio_thread():
-                        logging.info("Session %s: Audio sending thread started", session_id)
-                        try:
-                            while True:
-                                data = audio_queue.get()
-                                if data is None:
-                                    break
-                                dg_connection.send(data)
-                        except Exception as e:
-                            logging.error("Session %s: Error in send_audio_thread: %s\n%s", 
-                                        session_id, e, traceback.format_exc())
-                        finally:
-                            dg_connection.finish()
-                            logging.info("Session %s: Deepgram connection finished", session_id)
-
-                    # Start the background sender thread.
-                    sender_thread = threading.Thread(target=send_audio_thread, daemon=True)
-                    sender_thread.start()
-                    
-                    async def handle_audio_data_for_emotion(session_state, audio_bytes):
-                        """Process audio data for emotion analysis"""
-                        try:
-                            if not session_state.hume_ws.is_capturing_emotion:
-                                return
-                                
-                            # Add to buffer
-                            session_state.audio_buffer.append(audio_bytes)
-                            
-                            # Check if it's time to process
-                            current_time = time.time()
-                            if (session_state.last_audio_chunk_time is None or 
-                                current_time - session_state.last_audio_chunk_time >= session_state.audio_capture_interval):
-                                
-                                if session_state.audio_buffer:
-                                    audio_data = b''.join(session_state.audio_buffer)
-                                    # Send to Hume
-                                    await session_state.hume_ws.send_audio(audio_data)
-                                    
-                                    # Clear buffer and update timestamp
-                                    session_state.audio_buffer = []
-                                    session_state.last_audio_chunk_time = current_time
-                                    
-                                    logging.info(f"Sent audio chunk of {len(audio_data)} bytes at {current_time}")
-                        except Exception as e:
-                            logging.error(f"Error in audio emotion processing: {str(e)}\n{traceback.format_exc()}")
-
-
-                    # Asynchronously receive audio frames from the track and put them into the queue.
-                    try:
-                        while True:
-                            try:
-                                frame = await track.recv()
-                                if frame is None:
-                                    logging.info("Session %s: No more frames; ending audio capture", session_id)
-                                    break
-                                audio_data = frame.to_ndarray()
-                                audio_bytes = audio_data.tobytes()
-                                audio_queue.put(audio_bytes)
-
-                                if session_state.hume_ws.is_capturing_emotion:
-                                    asyncio.create_task(
-                                        handle_audio_data_for_emotion(session_state, audio_bytes)
-                                    )
-                            except MediaStreamError:
-                                # This is expected when client disconnects
-                                logging.info("Session %s: Client disconnected (MediaStreamError)", session_id)
-                                break
-                            except Exception as e:
-                                # This catches other unexpected errors
-                                print("Session %s: Error reading audio track: %s\n%s", 
-                                            session_id, e, traceback.format_exc())
-                                break
-                    finally:
-                        # Signal the sender thread to finish and wait for it to join.
-                        audio_queue.put(None)
-                        sender_thread.join()
-
-
-                        
                 async def handle_video_track(track, session_id, session_state):
                     """Handle video track for emotion analysis"""
                     logging.info(f"Session {session_id}: Video track detected")
@@ -1332,26 +1282,20 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket, emote_type=None)
     session_state.monitor_task = asyncio.create_task(monitor_frame_queue())
 
     async def fill_audio_queue(audio_track, text, my_event_id):
-        loop = asyncio.get_running_loop()
-        def blocking_tts_task():
-            with client.audio.speech.with_streaming_response.create(
-                model="tts-1",
-                voice="onyx",
-                input=text,
-                response_format="pcm"
-            ) as response:
-                for chunk in response.iter_bytes():
-                    if session_state.current_tts_event != my_event_id:
-                        break
-                    if not session_state.sent_started_talking:
-                        # websocket.send_json({"type": "START_TALK"})
-                        session_state.sent_started_talking = True
-                    audio_track.write_pcm(chunk)
-
-        try:
-            await loop.run_in_executor(executor, blocking_tts_task)
-        except asyncio.CancelledError:
-            raise
+        async with client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice="onyx",
+            input=text,
+            response_format="pcm"
+        ) as response:
+            if hasattr(session_state, "audio_track"):
+                session_state.audio_track.clear_queues()
+            async for chunk in response.iter_bytes():
+                if session_state.current_tts_event != my_event_id:
+                    break
+                if not session_state.sent_started_talking:
+                    session_state.sent_started_talking = True
+                audio_track.write_pcm(chunk)
 
     async def fill_task():
         try:
@@ -1361,6 +1305,8 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket, emote_type=None)
         finally:
             session_state.streaming_tts = False  # Turn off TTS flag here
 
+    if hasattr(session_state, "fill_task"):
+        session_state.fill_task.cancel()
     session_state.fill_task = asyncio.create_task(fill_task())
 
 
@@ -1390,7 +1336,7 @@ async def generate_proactive_message(user: Optional[dict]):
             "Generate a brief, warm greeting that introduces yourself and invites the user to share."
         )
 
-    proactive_response = client.chat.completions.create(
+    proactive_response = await client.chat.completions.create(
         model=model_version,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -1462,7 +1408,7 @@ async def finalize_conversation(
         "\n\nConversation:\n\n" + conversation_text
     )
     
-    worth_storing_response = client.chat.completions.create(
+    worth_storing_response = await client.chat.completions.create(
         model=model_version_extraction,
         messages=[
             {"role": "system", "content": "You are an expert at evaluating conversation quality and psychological value."},
@@ -1499,7 +1445,7 @@ async def finalize_conversation(
             "Conversation:\n\n" + conversation_text
         )
         
-        extraction_response = client.chat.completions.create(
+        extraction_response = await client.chat.completions.create(
             model=model_version_extraction,
             messages=[
                 {"role": "system", "content": "You are an expert psychoanalyst extracting insights."},
@@ -1578,7 +1524,7 @@ async def finalize_conversation(
             "Summarize the following conversation briefly, focusing on key insights and useful context:\n\n" +
             conversation_text
         )
-        summary_response = client.chat.completions.create(
+        summary_response = await client.chat.completions.create(
             model=model_version,
             messages=[
                 {"role": "system", "content": "You are an expert summarizer. Do not include information about facial expressions assesments."},
@@ -1884,7 +1830,7 @@ async def determine_response_type(user_text):
     Provide only the JSON and nothing else.
     """
     
-    decision_response = client.chat.completions.create(
+    decision_response = await client.chat.completions.create(
         model=model_version_extraction,
         messages=[
             {"role": "system", "content": "You are a decision-making assistant for an AI psychologist processing pipeline."},
@@ -2000,7 +1946,7 @@ async def process_message(
         if not isChat:
             if not assistant_text:
                 model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
-                chat_response = client.chat.completions.create(
+                chat_response = await client.chat.completions.create(
                     model=model_ver,
                     messages=history
                 )
@@ -2022,7 +1968,7 @@ async def process_message(
         else:
             if not assistant_text:
                 model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
-                chat_response = client.chat.completions.create(
+                chat_response = await client.chat.completions.create(
                     model=model_ver,
                     messages=history
                 )
