@@ -377,13 +377,13 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           marginBottom: "2rem" 
         }}>
           <GiBrain style={{
-            fontSize: isMobile ? 24 : 38,
+            fontSize: isMobile ? 28 : 38,
             color: "white",
             marginRight: 10
           }} />
           <div style={{ 
             color: "white", 
-            fontSize: isMobile ? 18 : "23px",
+            fontSize: isMobile ? 19 : "23px",
             margin: 0
           }}>
             Self AI
@@ -421,11 +421,11 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
             }}
           >
             <BsArrowLeft style={{
-              fontSize: 32,
+              fontSize: isMobile ? 22 : 32,
               color: "white"
             }} />
             <div style={{
-              fontSize: 18,
+              fontSize: isMobile ? 17 : 18,
               marginLeft: 10
             }}>Back</div>
           </button>}

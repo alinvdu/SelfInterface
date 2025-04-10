@@ -1150,7 +1150,7 @@ function App() {
           >
             <HiOutlinePhone style={{ fontSize: isMobile ? 18 : 21 }} />
           </LoadingDiv>
-          <div style={{ marginLeft: isMobile ? 7 : "1rem", marginRight: "0.5rem", fontSize: isMobile ? "14px" : "18px" }}>
+          <div style={{ marginLeft: isMobile ? 7 : "1rem", marginRight: "0.5rem", fontSize: isMobile ? "15px" : "18px" }}>
             {calling ? "Calling Atlas..." : "Let's Connect"}
           </div>
           
@@ -1481,7 +1481,7 @@ function App() {
       </div>
       {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
         position: "absolute",
-        top: smallerThan850 ? 28 : 35,
+        top: isMobile ? 20 : smallerThan850 ? 28 : 35,
         right: smallerThan850 ? 15 : 50,
         fontSize: isMobile ? 16 : 19,
         color: 'rgba(255, 255, 255, 1)',
@@ -1581,19 +1581,19 @@ function App() {
             border: "1px solid rgba(255, 255, 255, 0.35)",
             borderRadius: "21px",
             color: "white",
-            fontSize: isMobile ? 16 : "23px",
+            fontSize: isMobile ? 19 : "23px",
             width: isMobile ? 120 : 155,
-            height: isMobile ? 40 : 60,
+            height: isMobile ? 45 : 60,
             display: "flex",
             alignItems: "center",
             justifyContent: "center"
           }}>
             <GiBrain style={{
-              fontSize: isMobile ? 24 : 38,
+              fontSize: isMobile ? 28 : 38,
               color: "white",
               marginLeft: -5
             }} />
-            <div style={{marginLeft: isMobile ? 5 : 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
+            <div style={{marginLeft: isMobile ? 8 : 10, display: "flex", flexDirection: "column", alignItems: 'flex-start'}}>
               <div>Self AI</div>
             </div>
         </div>
@@ -1610,9 +1610,9 @@ function App() {
             WebkitBackdropFilter: "blur(8px)",
             border: "1px solid rgba(255, 255, 255, 0.35)",
             borderRadius: "26px",
-            padding: isModelDropdownOpen ? "0.8rem" : isMobile ? "0px 12px" : "0.5rem 1.2rem",
+            padding: isModelDropdownOpen ? "0.8rem" : isMobile ? "3px 16px" : "0.5rem 1.2rem",
             color: "white",
-            fontSize: isMobile ? 15 : "1.2rem",
+            fontSize: isMobile ? 16 : "1.2rem",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1776,7 +1776,7 @@ function App() {
             borderRadius: "26px",
             color: "white",
             fontSize: 17,
-            height: token ? isMobile ? 40 : 62 :  isMobile ? 40 : 45,
+            height: token ? isMobile ? 45 : 62 :  isMobile ? 45 : 45,
             boxSizing: "border-box",
             display: "flex",
             alignItems: "center",
@@ -2129,7 +2129,8 @@ function App() {
               flexDirection: "column",
               width: "100%",
               height: "100%",
-              overflow: "auto",
+              overflowY: "auto",
+              overflowX: "hidden",
               padding: 8,
               boxSizing: "border-box"
             }}>
