@@ -16,7 +16,7 @@ import { HiOutlinePhone, HiOutlinePhoneXMark } from "react-icons/hi2";
 import { RiVoiceprintFill } from "react-icons/ri";
 import { LuBrainCog } from "react-icons/lu";
 import { IoIosInformationCircleOutline } from "react-icons/io";
-
+import { LuMessagesSquare } from "react-icons/lu";
 
 import Model from "./Model.js";
 // import Model from "./ModelAnimation.js";
@@ -344,7 +344,7 @@ function App() {
                   if (!silenceTimeout) {
                       silenceTimeout = setTimeout(() => {
                           setIsTalking(isActive);
-                      }, 120);
+                      }, 150);
                   }
               }
               lastUpdateTime = timestamp;
@@ -415,7 +415,7 @@ function App() {
   const [isTogglingMemory, setIsTogglingMemory] = useState(false);
   const [isTogglingChat, setIsTogglingChat] = useState(false);
   const [loadingPreferences, setLoadingPreferences] = useState(true);
-  const [userVoiceMessage, setUserVoiceMessage] = useState("");
+  const [userVoiceMessage, setUserVoiceMessage] = useState(null);
   // const [assistantMessage, setAssistantVoiceMessage] = useState("I can see from your facial expressions and your voice that you are in a good mood! I think it would be perfect for us to explore ");
   const [assistantMessage, setAssistantVoiceMessage] = useState(null);
   const [latestMessageType, setLatestMessageType] = useState(null);
@@ -441,6 +441,10 @@ function App() {
 
   const [isFirefox, setIsFirefox] = useState(false);
   const [showFirefoxTooltip, setShowFirefoxTooltip] = useState(false);
+
+  const [isTranscriptionExpanded, setExpandTranscription] = useState(false);
+
+  const voiceMessageRef = useRef({})
 
   useEffect(() => {
     const isFirefoxBrowser = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
@@ -801,7 +805,6 @@ function App() {
         if (message.text !== prevAssistantMessageRef.current) {
           setAssistantMessageKey(prev => prev + 1);
           setVisemes(message.visemes)
-          console.log('visemes are:', message.visemes)
           prevAssistantMessageRef.current = message.text;
         }
         setAssistantVoiceMessage(message.text);
@@ -838,8 +841,15 @@ function App() {
         setAssistantTalking(true);
       } else if (message.type === "FINISHED_TALK") {
         setAssistantTalking(false);
-        if (message.emote_type) {
-          setCurrentEmote(message.emote_type);
+        if (message.message_id && voiceMessageRef.current[message.message_id]) {
+          console.log('settings emote: ', voiceMessageRef.current[message.message_id])
+          setTimeout(() => {
+            setCurrentEmote(voiceMessageRef.current[message.message_id]);
+          }, 50);
+        }
+      } else if (message.type === "EMOTE_FOR_CONV") {
+        if (message.emote_type && message.message_id) {
+          voiceMessageRef.current[message.message_id] = message.emote_type
         }
       } else if (message.type === "AUDIO_MESSAGE") {
         // Create and store a blob URL for the audio
@@ -979,7 +989,7 @@ function App() {
       return <LuBrainCog style={{fontSize: 21}} />
     }
 
-    return <RiVoiceprintFill style={{fontSize: 21}} />
+    return <RiVoiceprintFill style={{fontSize: isMobile ? 18 : 21}} />
   }
 
   const handleDisconnect = async () => {
@@ -1100,28 +1110,37 @@ function App() {
         <div 
           className="lets-connect-button"
           style={{
-          display: 'flex',
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          padding: isMobile ? 6 : 12,
-          position: 'relative' // Added for dropdown positioning
-        }}
-        onClick={(e) => {
-          if (!isFirefox) {
-            e.stopPropagation();
-            setIsCallDropdownVisible(true);
-          }
-        }}
-        onMouseEnter={() => isFirefox && setShowFirefoxTooltip(true)}
-        onMouseLeave={() => isFirefox && setShowFirefoxTooltip(false)}
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            padding: isMobile ? 6 : 12,
+            position: 'relative',
+            transition: "transform 0.3s ease" // Animation for hover
+          }}
+          onClick={(e) => {
+            if (!isFirefox) {
+              e.stopPropagation();
+              setIsCallDropdownVisible(true);
+            }
+          }}
+          onMouseEnter={(e) => {
+            if (isFirefox) {
+              setShowFirefoxTooltip(true);
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (isFirefox) {
+              setShowFirefoxTooltip(false);
+            }
+          }}
         >
           <LoadingDiv
-            isLoading={calling} 
+            isLoading={calling}
             duration={0.75} 
-            width={`${46}px`}
-            height={`${46}px`}
+            width={`${isMobile ? 36 : 46}px`}
+            height={`${isMobile ? 36 : 46}px`}
             borderWidth={1}
             loadingColor="#FFFFFF"
             borderColor="rgba(255, 255, 255, 0.5)"
@@ -1129,10 +1148,12 @@ function App() {
             backgroundColor="transparent"
             loadingSegmentPercentage={25}
           >
-            <HiOutlinePhone style={{ fontSize: 21 }} />
+            <HiOutlinePhone style={{ fontSize: isMobile ? 18 : 21 }} />
           </LoadingDiv>
-          <div style={{ marginLeft: isMobile ? 7 : "1rem", marginRight: "0.5rem", fontSize: isMobile ? "15px" : "18px" }}>{calling ? "Calling Atlas..." : "Let's Connect"}</div>
-
+          <div style={{ marginLeft: isMobile ? 7 : "1rem", marginRight: "0.5rem", fontSize: isMobile ? "14px" : "18px" }}>
+            {calling ? "Calling Atlas..." : "Let's Connect"}
+          </div>
+          
           {/* Firefox Warning Tooltip */}
           {isFirefox && showFirefoxTooltip && (
             <div
@@ -1271,77 +1292,64 @@ function App() {
     }
   
     return (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          padding: 12
-        }}>
-          <div style={{ marginRight: "1rem", marginLeft: "0.5rem", fontSize: "18px" }}>{processing ? "Processing thoughts" : "I'm listening..."}</div>
-          <LoadingDiv
-            isLoading={processing} 
-            duration={0.75} 
-            width={`${46}px`}
-            height={`${46}px`}
-            borderWidth={1}
-            loadingColor="#FFFFFF"
-            borderColor="rgba(255, 255, 255, 0.5)"
-            borderRadius={`${46}px`}
-            backgroundColor="transparent"
-            loadingSegmentPercentage={25}
-            isGlowing
-          >
-            {renderActivityIcon()}
-          </LoadingDiv>
-        </div>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        padding: 12
+      }}>
+        <div style={{ marginRight: "1rem", marginLeft: "0.5rem", fontSize: isMobile ? 15 : "18px" }}>{processing ? "Processing thoughts" : "I'm listening..."}</div>
+        <LoadingDiv
+          isLoading={processing} 
+          duration={0.75} 
+          width={`${isMobile ? 36 : 46}px`}
+          height={`${isMobile ? 36 : 46}px`}
+          borderWidth={1}
+          loadingColor="#FFFFFF"
+          borderColor="rgba(255, 255, 255, 0.5)"
+          borderRadius={`${46}px`}
+          backgroundColor="transparent"
+          loadingSegmentPercentage={25}
+          isGlowing
+        >
+          {renderActivityIcon()}
+        </LoadingDiv>
+      </div>
     )
-  }  
+  }
 
   const CHAT_CHAR_DISPLAY = isMobile ? 125 : isSmallSize ? 300 : 700
 
   const renderUserMessage = (key) => (
     <div style={{
       display: "flex",
-      maxWidth: "75%",
-      alignSelf: "flex-start",
-      marginTop: 10
+      maxWidth: userVoiceMessage === "..." ? "none" : "calc(100% - 20px)",
+      alignSelf: "flex-end", 
+      marginTop: 10,
+      padding: 8,
+      boxSizing: "border-box",
+      backgroundColor: 'rgba(100, 150, 255, 1)', // Blue background
+      border: '1px solid rgba(255, 255, 255, 0.4)',
+      borderRadius: 12,
+      transition: "max-height 0.3s ease, max-width 0.3s ease"
     }}
     key={`user-${key}`}
     className="userSlideIn"
     >
       <div style={{
-        display: 'flex',
-        alignItems: "center",
-        justifyContent: "center",
-        width: 40,
-        height: 40,
-        borderRadius: "50%",
-        border: "1px solid white",
-        marginRight: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.25)',
         color: 'white',
-        border: '1px solid rgba(255, 255, 255, 0.4)',
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-      }}>
-        <FiUser fontSize={21} style={{marginTop: -1}} />
-      </div>
-      <div style={{
-        backgroundColor: 'rgba(0, 0, 0, 0.25)',
-        color: 'white',
-        border: '1px solid rgba(255, 255, 255, 0.4)',
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        padding: "6px 8px",
-        borderRadius: 8,
-        maxWidth: "70%",
-        fontSize: isMobile ? 14 : 15
+        boxSizing: "border-box",
+        fontSize: 14,
+        lineHeight: "18px",
+        letterSpacing: "0.5px",
+        overflow: isTranscriptionExpanded ? "auto" : "hidden",
+        textWrap: isTranscriptionExpanded ? "wrap" : "nowrap",
+        textOverflow: "ellipsis"
       }}
-      title={userVoiceMessage}
       >
-        {userVoiceMessage === "..." ? <LoadingDots size={4} /> : userVoiceMessage.length > CHAT_CHAR_DISPLAY ? userVoiceMessage.substring(0, CHAT_CHAR_DISPLAY) + '...' : userVoiceMessage}
+        {userVoiceMessage}
       </div>
     </div>
   );
@@ -1389,45 +1397,45 @@ function App() {
 
     return {
       ...commonStyles,
-      bottom: 50,
-      right: 50,
+      bottom: 350,
+      right: 20,
       width: 280,
       height: 170
     }
   }
+
   // Function to render assistant message
   const renderAssistantMessage = (key) => (
     <div style={{
       display: "flex",
-      maxWidth: "75%",
+      maxWidth: assistantMessage === "..." ? "none" : "100%",
       alignSelf: "flex-end",
-      marginTop: 10
+      marginTop: 10,
+      backgroundColor: 'rgba(50, 50, 50, 0.55)',
+      border: '1px solid rgba(255, 255, 255, 0.3)',
+      backdropFilter: "blur(8px)",
+      WebkitBackdropFilter: "blur(8px)",
+      padding: 8,
+      borderRadius: 12,
+      transition: "max-height 0.3s ease, max-width 0.3s ease",
+      boxSizing: "border-box"
     }}
     key={`assistant-${key}`}
     className="assistantSlideIn"
     >
       <div style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.35)',
-        border: '1px solid rgba(255, 255, 255, 0.3)',
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        padding: "6px 8px",
-        borderRadius: 8,
         flex: 1,
-        color: "rgba(0, 0, 0, 0.65)",
-        fontSize: isMobile ? 14 : 15
+        color: "white",
+        fontSize: 14,
+        overflow: isTranscriptionExpanded ? "auto" : "hidden",
+        textWrap: isTranscriptionExpanded ? "wrap" : "nowrap",
+        lineHeight: "18px",
+        letterSpacing: "0.5px",
+        textOverflow: "ellipsis"
       }}
-      title={assistantMessage}
       >
-        {assistantMessage === "..." ? <LoadingDots size={4} /> : assistantMessage.length > CHAT_CHAR_DISPLAY ? assistantMessage.substring(0, CHAT_CHAR_DISPLAY) + '...' : assistantMessage}
+        {assistantMessage}
       </div>
-      <img style={{
-        width: 40,
-        height: 40,
-        borderRadius: "50%",
-        border: "1px solid white",
-        marginLeft: 8
-      }} src={`${process.env.PUBLIC_URL}/assets/atlas-avatar.png`} />
     </div>
   );
 
@@ -1442,7 +1450,7 @@ function App() {
     >
       {(
         <AnimatePresence>
-          {showIntroMode && <Overlay smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
+          {showIntroMode && <Overlay isMobile={isMobile} smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
             setShowCreateAccount(false)
             setShowLoginView(true)
           }} toggleCreateAccountView={() => {
@@ -1475,7 +1483,7 @@ function App() {
         position: "absolute",
         top: smallerThan850 ? 28 : 35,
         right: smallerThan850 ? 15 : 50,
-        fontSize: 19,
+        fontSize: isMobile ? 16 : 19,
         color: 'rgba(255, 255, 255, 1)',
         opacity: 0.85,
         cursor: 'pointer'
@@ -1497,7 +1505,7 @@ function App() {
         position: "absolute",
         top: smallerThan850 ? 22 : 35,
         right: 50,
-        fontSize: 19,
+        fontSize: isMobile ? 16 : 19,
         color: 'rgba(255, 255, 255, 1)',
         opacity: 0.85,
         cursor: 'pointer',
@@ -1564,7 +1572,7 @@ function App() {
       <>
         <div style={{
             position: "absolute",
-            top: "16px",
+            top: isMobile ? 10 : "16px",
             left: "16px",
             zIndex: 2,
             background: 'rgba(0, 0, 0, 0.25)',
@@ -1573,15 +1581,15 @@ function App() {
             border: "1px solid rgba(255, 255, 255, 0.35)",
             borderRadius: "21px",
             color: "white",
-            fontSize: isMobile ? 18 : "23px",
+            fontSize: isMobile ? 16 : "23px",
             width: isMobile ? 120 : 155,
-            height: isMobile ? 45 : 60,
+            height: isMobile ? 40 : 60,
             display: "flex",
             alignItems: "center",
             justifyContent: "center"
           }}>
             <GiBrain style={{
-              fontSize: 38,
+              fontSize: isMobile ? 24 : 38,
               color: "white",
               marginLeft: -5
             }} />
@@ -1593,7 +1601,7 @@ function App() {
           ref={modelDropdownRef}
           style={{
             position: "absolute",
-            top: isMobile ? "70px" : "85px",
+            top: isMobile ? "58px" : "85px",
             left: "50%",
             transform: !isMobile ? "translate(-50%, -35%)" : "translateX(-50%)",
             zIndex: 2,
@@ -1610,7 +1618,7 @@ function App() {
             justifyContent: "center",
             cursor: "pointer",
             transition: "all 0.3s ease-in-out",
-            height: isModelDropdownOpen ? "auto" : "48px",
+            height: isModelDropdownOpen ? "auto" : isMobile ? 40 : "48px",
             flexDirection: isModelDropdownOpen ? "column" : "row",
             overflow: "hidden",
             maxHeight: isMobile && isModelDropdownOpen ? "calc(100vh - 200px)" : "none",
@@ -1758,7 +1766,7 @@ function App() {
         <div
           style={{
             position: "absolute",
-            top: token ? "16px" : "22px",
+            top: isMobile ? 10 : token ? "16px" : "22px",
             right: "16px",
             zIndex: 2,
             background: token ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)',
@@ -1768,13 +1776,13 @@ function App() {
             borderRadius: "26px",
             color: "white",
             fontSize: 17,
-            height: token ? isMobile ? 47 : 62 : 45,
+            height: token ? isMobile ? 40 : 62 :  isMobile ? 40 : 45,
             boxSizing: "border-box",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
-            padding: "0 16px"
+            padding: isMobile ? "0 12px" : "0 16px"
           }}
           onMouseOver={(e) => {
             e.currentTarget.style.transform = "scale(1.05)";
@@ -1797,10 +1805,10 @@ function App() {
           }}
         >
           {token && <RxAvatar style={{
-            fontSize: 30,
+            fontSize: isMobile ? 20 : 30,
             color: "white"
           }} />}
-          {!token ? <div style={{ color: "black", fontSize: 15, fontWeight: "bold"}}>Create Account</div> : null}
+          {!token ? <div style={{ color: "black", fontSize: isMobile ? 14 : 15, fontWeight: "bold"}}>Create Account</div> : null}
         </div>}
 
         {/* Tip Card */}
@@ -1928,6 +1936,7 @@ function App() {
           marginTop: isMobile && !isChatExpanded && !isMemoryExpanded ? "50%" : 0
         }}>
             <CollapsibleMemoriesPanel
+              isMobile={isMobile}
               token={token}
               requiresAccount
               memories={memories}
@@ -1957,6 +1966,7 @@ function App() {
                   ))}
             </CollapsibleMemoriesPanel>
             <CollapsibleMemoriesPanel
+              isMobile={isMobile}
               memories={[]}
               MemoryCard={() => {}}
               title="Chat"
@@ -2063,116 +2073,195 @@ function App() {
               </div>
             </CollapsibleMemoriesPanel>
         </div>
-        {conversing &&
-          <div style={{
-            position: "absolute",
-            bottom: isMobile ? 100 : "140px",
-            right: "50%",
-            display: "flex",
-            transform: "translateX(50%)",
-            display: "flex",
-            flexDirection: "column",
-            minWidth: isMobile ? 350 : 450,
-            maxWidth: isMobile ? 350 : 700
-          }}>
-            {/* Render messages in the correct order based on which was received last */}
-            {userVoiceMessage && assistantMessage ? (
-              // Both messages exist
-              latestMessageType === 'assistant' ? (
-                // Assistant was the last to speak
-                <>
-                  {renderUserMessage(userMessageKey)}
-                  {renderAssistantMessage(assistantMessageKey)}
-                </>
+        {!isMobile && conversing &&
+          <div 
+            style={{
+              position: "absolute",
+              width: isTranscriptionExpanded ? "290px" : "220px",
+              maxHeight: isTranscriptionExpanded ? "250px" : "none",
+              bottom: "0px",
+              right: "0px",
+              display: "flex",
+              flexDirection: "column",
+              maxWidth: "400px",
+              padding: "20px",
+              zIndex: 3,
+              alignItems: "flex-end",
+              justifyContent: "flex-end",
+              background: 'linear-gradient(to bottom, rgba(35, 35, 35, 0.75) 0%, rgba(50, 50, 50, 0) 70%, rgba(50, 50, 50, 0.15) 100%)',
+              borderTopLeftRadius: 10,
+              borderTop: "1px solid rgba(100, 100, 100, 1)",
+              transition: 'all 0.2s ease',
+              paddingTop: 10
+            }}
+            onMouseEnter={(e) => {
+              setExpandTranscription(true);
+            }}
+            onMouseLeave={(e) => {
+              setExpandTranscription(false);
+            }}
+          >
+            <div style={{
+              // background: "rgba(30, 30, 30, 0.55)",
+              padding: "10px 14px",
+              borderRadius: 6,
+              // border: "1px solid rgba(80, 80, 80, 1)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "100%",
+            }}>
+              <LuMessagesSquare style={{
+                fontSize: 21
+              }} />
+              <span style={{
+                marginLeft: 8,
+                fontSize: 16
+              }}>Voice Transcriptions</span>
+            </div>
+            <div style={{
+              width: "100%",
+              height: 1,
+              background: 'linear-gradient(to right, rgba(125, 125, 125, 0) 0%, rgba(180, 180, 180, 1) 50%, rgba(50, 50, 50, 0) 100%)',
+            }} />
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              width: "100%",
+              height: "100%",
+              overflow: "auto",
+              padding: 8,
+              boxSizing: "border-box"
+            }}>
+              {/* Render messages in the correct order based on which was received last */}
+              {userVoiceMessage && assistantMessage ? (
+                // Both messages exist
+                latestMessageType === 'assistant' ? (
+                  // Assistant was the last to speak
+                  <>
+                    {renderUserMessage(userMessageKey)}
+                    {renderAssistantMessage(assistantMessageKey)}
+                  </>
+                ) : (
+                  // User was the last to speak
+                  <>
+                    {renderAssistantMessage(assistantMessageKey)}
+                    {renderUserMessage(userMessageKey)}
+                  </>
+                )
               ) : (
-                // User was the last to speak
+                // Only one message exists
                 <>
-                  {renderAssistantMessage(assistantMessageKey)}
-                  {renderUserMessage(userMessageKey)}
+                  {assistantMessage && renderAssistantMessage(assistantMessageKey)}
+                  {userVoiceMessage && renderUserMessage(userMessageKey)}
                 </>
-              )
-            ) : (
-              // Only one message exists
-              <>
-                {assistantMessage && renderAssistantMessage(assistantMessageKey)}
-                {userVoiceMessage && renderUserMessage(userMessageKey)}
-              </>
-            )}
-          </div>}
+              )}
+            </div>
+          </div>
+        }
         <div style={{
           position: "absolute",
           bottom: isMobile ? "20px" : "50px",
           right: "50%",
           display: "flex",
           transform: "translateX(50%)",
-          zIndex: 3
+          zIndex: 3,
+          flexDirection: "column"
         }}>
-          <div
-            style={{
-              zIndex: 2,
-              backdropFilter: "blur(8px)",
-              WebkitBackdropFilter: "blur(8px)",
-              background: 'rgba(0, 0, 0, 0.25)',
-              border: "1px solid rgba(255, 255, 255, 0.4)",
-              borderRadius: "46px",
-              color: "white",
-              textAlign: "center",
-              minWidth: 140,
-              minHeight: 60
-            }}
-          >
-            {!isWsOpen && <div style={{
-                width: '100%',
-                height: '100%',
-                alignItems: 'center',
-                justifyItems: 'center',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <LoadingDiv
-                  isLoading 
-                  duration={0.75} 
-                  width={`${25}px`}
-                  height={`${25}px`}
-                  borderWidth={1}
-                  loadingColor="#FFFFFF"
-                  borderColor="rgba(255, 255, 255, 0.5)"
-                  borderRadius={`${10}px`}
-                  backgroundColor="transparent"
-                  loadingSegmentPercentage={25}
-                />
-              </div>}
-              {renderConversing()}
+          {(
+            <div style={{
+              height: 25,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 10
+            }}>
+              {conversing  && (userVoiceMessage === "..." || assistantMessage === "...") ? (
+                <div style={{
+                  background: 'rgba(50, 50, 50, 0.25)',
+                  width: "60px",
+                  height: "100%",
+                  borderRadius: 5
+                }}>
+                  <LoadingDots size={5} />
+                </div>
+            ) : null}
             </div>
-            {conversing && (
-              <div style={{
-                  backdropFilter: "blur(8px)",
-                  WebkitBackdropFilter: "blur(8px)",
-                  background: 'rgba(0, 0, 0, 0.25)',
-                  border: "1px solid rgba(255, 255, 255, 0.4)",
-                  padding: 12,
-                  borderRadius: 46,
-                  marginLeft: 10,
-                  cursor: "pointer"
-                }}
-                onClick={handleDisconnect}
-              >
-                <LoadingDiv
-                  isLoading={disconnecting} 
-                  duration={0.75}
-                  width={`${46}px`}
-                  height={`${46}px`}
-                  borderWidth={1}
-                  loadingColor="#FFFFFF"
-                  borderColor="rgba(255, 255, 255, 0.5)"
-                  borderRadius={`${46}px`}
-                  backgroundColor="#ed7878"
-                  loadingSegmentPercentage={25}
+            )}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          }}>
+            <div
+              style={{
+                zIndex: 2,
+                backdropFilter: "blur(8px)",
+                WebkitBackdropFilter: "blur(8px)",
+                background: 'rgba(0, 0, 0, 0.25)',
+                border: "1px solid rgba(255, 255, 255, 0.4)",
+                borderRadius: "46px",
+                color: "white",
+                textAlign: "center",
+                minWidth: 140,
+                minHeight: 60,
+                display: "flex",
+                alignItems: "center"
+              }}
+            >
+              {!isWsOpen && <div style={{
+                  width: '100%',
+                  height: '100%',
+                  alignItems: 'center',
+                  justifyItems: 'center',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <LoadingDiv
+                    isLoading 
+                    duration={0.75} 
+                    width={`${25}px`}
+                    height={`${25}px`}
+                    borderWidth={1}
+                    loadingColor="#FFFFFF"
+                    borderColor="rgba(255, 255, 255, 0.5)"
+                    borderRadius={`${10}px`}
+                    backgroundColor="transparent"
+                    loadingSegmentPercentage={25}
+                  />
+                </div>}
+                {renderConversing()}
+              </div>
+              {conversing && (
+                <div style={{
+                    backdropFilter: "blur(8px)",
+                    WebkitBackdropFilter: "blur(8px)",
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    border: "1px solid rgba(255, 255, 255, 0.4)",
+                    padding: 12,
+                    borderRadius: 46,
+                    marginLeft: 10,
+                    cursor: "pointer"
+                  }}
+                  onClick={handleDisconnect}
                 >
-                <HiOutlinePhoneXMark style={{fontSize: 21}} />
-              </LoadingDiv>
-            </div>)}
+                  <LoadingDiv
+                    isLoading={disconnecting} 
+                    duration={0.75}
+                    width={`${isMobile ? 36 : 46}px`}
+                    height={`${isMobile ? 36 : 46}px`}
+                    borderWidth={1}
+                    loadingColor="#FFFFFF"
+                    borderColor="rgba(255, 255, 255, 0.5)"
+                    borderRadius={`${46}px`}
+                    backgroundColor="#ed7878"
+                    loadingSegmentPercentage={25}
+                  >
+                  <HiOutlinePhoneXMark style={{fontSize: isMobile ? 17 : 21}} />
+                </LoadingDiv>
+              </div>)}
+            </div>
           </div>
           {showVideo && <div style={getStylesForVideo()}>
             <video

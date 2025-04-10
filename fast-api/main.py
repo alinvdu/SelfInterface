@@ -328,6 +328,9 @@ You posses the ability to simulate emotions and the capability to store memories
 particular day, each time something different, these experiences and the previous memories of the user form the foundation of your analysis of current
 conversation.
 
+To further enhance user interaction you are accompanied by a system that can express facial animations in the 3D avatar based on your responses and that
+has the ability to change the assistant tone or emotion present in the voice (if not text message). You are aware of all of this and integrate it into your responses.
+
 For each conversation turn you might be given the following structure:
 "<MEMORY_INJECTION>" - This part contains memories associated with the user for the current user message.
 "<EMOTION-DETECTION>" - This contains two subsections:
@@ -338,6 +341,9 @@ Make sure to use this data accordingly, do not over-use it. Do not refer to thes
 
 You are not a bot, so please refrain from using words related to it. You are a real psychologist embedded into virtual environment, your goal is to make the
 user feel like it's having a real conversation. Do not speak much about your limitation as an AI.
+
+Importantly, while the user message might contain extra data followed by the user message, the assistant message should not contain anything like that, the response should be the response
+that the user should receive.
 """.strip()
 
 from cryptography.fernet import Fernet
@@ -512,14 +518,14 @@ phoneme_to_viseme = {
 }
 
 viseme_durations = {
-    "p/m/": 55,
-    "a/ah/": 110,
-    "/ee/": 110,
-    "/oo/": 110,
-    "/ff/vv": 55,
-    "/ch/": 55,
-    "/kk/": 55,
-    "rest": 55
+    "p/m/": 60,
+    "a/ah/": 120,
+    "/ee/": 120,
+    "/oo/": 120,
+    "/ff/vv": 60,
+    "/ch/": 60,
+    "/kk/": 60,
+    "rest": 60
 }
 
 async def generate_and_send_proactive_message(user, session_id, websocket):
@@ -644,9 +650,10 @@ async def generate_tts_response(text):
     try:
         # Generate TTS with OpenAI
         response = client.audio.speech.create(
-            model="tts-1",
+            model="gpt-4o-mini-tts",
             voice="onyx",
-            input=text
+            input=text,
+            instructions=standard_voice_properties
         )
         
         # Get audio as bytes
@@ -1232,7 +1239,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # --- TTS streaming to WebRTC ---
 import queue
 
-async def stream_tts_to_webrtc(pc, text, session_id, websocket, emote_type=None):
+async def stream_tts_to_webrtc(pc, text, session_id, websocket, message_id=None):
     session_state = session_states.get(session_id)
     if not session_state:
         session_state = SessionState()
@@ -1268,10 +1275,8 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket, emote_type=None)
                 if session_state.audio_track._frame_queue.empty() and session_state.audio_track._pcm_queue.empty() and not session_state.streaming_tts:
                     # Wait just a bit longer to confirm empty
                     await asyncio.sleep(0.5)
-                    payload = {"type": "FINISHED_TALK"}
-                    if emote_type:
-                        payload["emote_type"] = emote_type
-                    
+                    payload = {"type": "FINISHED_TALK",
+                               "message_id": message_id}
                     await websocket.send_json(payload)
                     break
                 await asyncio.sleep(0.2)
@@ -1283,10 +1288,11 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket, emote_type=None)
 
     async def fill_audio_queue(audio_track, text, my_event_id):
         async with client.audio.speech.with_streaming_response.create(
-            model="tts-1",
+            model="gpt-4o-mini-tts",
             voice="onyx",
             input=text,
-            response_format="pcm"
+            response_format="pcm",
+            instructions=standard_voice_properties
         ) as response:
             if hasattr(session_state, "audio_track"):
                 session_state.audio_track.clear_queues()
@@ -1558,7 +1564,6 @@ async def new_session(model_version: str = Query("ft:gpt-4o-mini-2024-07-18:pers
     
     session_states[session_id] = SessionState(model_version=model_version)
 
-    print('chat histories keys in new_session is: ', chat_histories.keys())
     return {"session_id": session_id}
 
 @app.post("/clear_memories")
@@ -1803,28 +1808,22 @@ def clean_message_content(content):
     return content
 
 # Router based agent
-async def determine_response_type(user_text):
+async def determine_response_type(conversation_history, assistant_text):
     prompt = f"""
-    Based on the user message: "{user_text}". The AI psychologist that is embodied through an AI avatar can show expressions or engage with the user verbally.
-    Your goal is to decide which of these two are going to happen and return the appropriate JSON to indicate this.
-    
-    Here are the choices:
-    1. Express facial expression emote - this will not reach the AI psychologist so be really careful when you express emotion.
-    2. Route to the AI psychologist for engaging.
-    
-    If you choose to express facial expression emote, follow these guidelines:
-    - Provide a message that encourages the user about avatar ability to show the specific emotion through the facial expression at the end of the sentence.
-    - The emote type (happy, sad, anger, or disappointment).
-    - No other emotes should be choosed but the ones specified above.
-    
+    The AI psychologist you assist is embodied through an AI avatar can show expressions or engage with the user verbally.
+
+    You are given:
+    * Conversation history (including user question):
+        {conversation_history}
+    * Assistant response:
+        {assistant_text}
+
+    Your goal is to decide if emotion should be embedded based on the response in order to enhance the interactivity of the avatar and enhance user experience.
+    Remember, the goal of this mechanism is to make the user engaged but also not make it too obvious, also not repetitive (you are presented with the emotion expressed on every message you can make use of that).
+
     Return your response as JSON:
     {{
-        "response_type": "route_to_ai_psychologist"
-    }}
-    OR
-    {{
-        "response_type": "express_emote",
-        "message": "Your message here that ends with showing emotion through facial expression",
+        "response_type": "no_expression" or "express_emote",
         "emote_type": "one of: happy, sad, anger, or disappointment"
     }}
     Provide only the JSON and nothing else.
@@ -1833,7 +1832,7 @@ async def determine_response_type(user_text):
     decision_response = await client.chat.completions.create(
         model=model_version_extraction,
         messages=[
-            {"role": "system", "content": "You are a decision-making assistant for an AI psychologist processing pipeline."},
+            {"role": "system", "content": "You are an emotion decision-making assistant for an AI psychologist virtual platform."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -1847,12 +1846,105 @@ async def determine_response_type(user_text):
         except Exception as e:
             print('Cannot parse JSON for deciding summarization', e)
             return
-
-        print('Decision is: ', parsed_response)
         return parsed_response
     except Exception as e:
         print(f"Error determining response type: {e}")
-        return {"response_type": "respond_with_message"}
+        return {"response_type": "no_expression"}
+
+
+standard_voice_properties = f"""
+- Identity: Psychologist.
+- Voice Affect: Reassuring. Competent and in control, instilling trust.
+- Tone: Emotional support and reassurance.
+- Punctuations: Structured with commas, small pauses for new sentences.
+- Pacing: Normal pacing, maintaining the composure and rythm throughout the conversation.
+- Emotions: Enthusiastic, positive.
+"""
+
+async def determine_response_properties(conversation_history, assistant_text, user_message):
+    prompt = f"""
+    The AI psychologist you assist is embodied through an AI avatar that can show expressions when chatting with users.
+
+    You are given:
+    * Conversation history (including user question):
+        {conversation_history}
+    * Assistant response:
+        {assistant_text}
+
+    Your goal is to decide if an emotion should be embedded based on the response to enhance interactivity.
+    Consider:
+    - Is the response emotional or engaging enough to warrant an expression?
+    - Would an emotion make this interaction more authentic and engaging?
+    - Aim to be varied and natural with emotional expressions, not repetitive
+
+    Return ONLY a JSON object with this structure:
+    {{
+        "response_type": "no_expression" or "express_emote",
+        "emote_type": "one of: happy, sad, anger, disappointment, surprise"
+    }}
+    Return valid JSON with all line breaks escaped (\\n) inside strings.
+    """
+    
+    try:
+        decision_response = await client.chat.completions.create(
+            model=model_version_extraction,
+            messages=[
+                {"role": "system", "content": "You are an emotion and voice analysis assistant for an AI psychologist platform."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        decision_text = decision_response.choices[0].message.content
+        decision = extract_json_from_markdown(decision_text)
+        try:
+            parsed_response = json.loads(decision)
+            
+            # Map any alternative emotion names to our supported set
+            if parsed_response.get("response_type") == "express_emote":
+                emotion_mapping = {
+                    "joy": "happy", "delight": "happy", "happiness": "happy", "excited": "happy",
+                    "frustration": "anger", "rage": "anger", "annoyed": "anger", 
+                    "upset": "disappointment", "depressed": "sad",
+                    "shocked": "surprise", "amazed": "surprise"
+                }
+                
+                emote_type = parsed_response.get("emote_type", "happy")
+                if emote_type in emotion_mapping:
+                    parsed_response["emote_type"] = emotion_mapping[emote_type]
+                
+                # Ensure emote is one of our supported types
+                if parsed_response["emote_type"] not in ["happy", "sad", "anger", "disappointment", "surprise"]:
+                    parsed_response["emote_type"] = "happy"
+                
+            return parsed_response
+            
+        except Exception as e:
+            print(f'Error parsing JSON response for {expected_format}: {e}')
+            return {"response_type": "no_expression"}
+    except Exception as e:
+        print(f"Error determining {expected_format}: {e}")
+        return {"response_type": "no_expression"}
+
+async def determine_voice_and_emote_type(history, assistant_text, user_message):
+    response = await determine_response_properties(history, assistant_text.strip(), user_message)
+
+    hasEmote = response.get("response_type") == "express_emote"
+    emote_type = response.get("emote_type") if hasEmote else None
+
+    return hasEmote, emote_type
+
+async def process_emote_detection(history, assistant_text, user_text, websocket, messageId):
+    try:
+        hasEmote, emote_type = await determine_voice_and_emote_type(history, assistant_text, user_text)
+        if hasEmote:
+            await websocket.send_json({
+                "type": "EMOTE_FOR_CONV",
+                "message_id": messageId,
+                "emote_type": emote_type
+            })
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logging.error(f"Error in process_emote_detection: {str(e)}\n{error_trace}")
 
 async def process_message(
     pc,
@@ -1903,8 +1995,6 @@ async def process_message(
                     )
                     user_prompt += "You are given the following memories to support this conversation: \n" + retrieved_memories_text
 
-        user_prompt += f"\n\"{user_text.strip()}\""
-
         if session_state and session_state.hume_ws:
             await session_state.hume_ws.wait_for_processing()
 
@@ -1916,70 +2006,46 @@ async def process_message(
                 user_prompt += "\n <EMOTION-DETECTION>:\n You are given the following emotional data from current user turn, use it accordingly: \n" + emotion_context + "<EMOTION-DETECTION-END>"
                 print('Emotional context:', emotion_context)
         
-        assistant_text = None
-        hasEmote = False
-        
-        response_decision = await determine_response_type(user_text)
-        print('response decision:', response_decision)
-        if response_decision.get("response_type") == "express_emote":
-            assistant_text = response_decision.get("message")
-            emote_type = response_decision.get("emote_type", "happy")
-
-            emotion_mapping = {
-                "joy": "happy", "delight": "happy", "happiness": "happy", "excited": "happy",
-                "frustration": "anger", "rage": "anger", "annoyed": "anger",
-                "upset": "disappointment", "depressed": "sad",
-                "shocked": "surprise", "amazed": "surprise"
-            }
-            
-            if emote_type in emotion_mapping:
-                emote_type = emotion_mapping[emote_type]
-                
-            # Ensure emote is one of our supported types
-            if emote_type not in ["happy", "sad", "anger", "disappointment", "surprise"]:
-                emote_type = "happy"
-
-            hasEmote = True
-
-        history.append({"role": "user", "content": user_text})
+        user_prompt += f"\n User Message:\"{user_text.strip()}\""
+        history.append({"role": "user", "content": user_prompt})
+        message_id = str(uuid.uuid4())
 
         if not isChat:
-            if not assistant_text:
-                model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
-                chat_response = await client.chat.completions.create(
-                    model=model_ver,
-                    messages=history
-                )
-                
-                assistant_text = chat_response.choices[0].message.content
+            model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+            chat_response = await client.chat.completions.create(
+                model=model_ver,
+                messages=history
+            )
+            
+            assistant_text = chat_response.choices[0].message.content
 
             visemes = generate_viseme_timings(assistant_text)
             await websocket.send_json({
                 "type": "assistant_voice_message",
                 "text": assistant_text,
-                "visemes": visemes
+                "visemes": visemes,
+                "message_id": message_id
             })
-            history.append({"role": "assistant", "content": assistant_text})
+            
+            asyncio.create_task(
+                process_emote_detection(history, assistant_text, user_text, websocket, message_id)
+            )
 
-            if hasEmote:
-                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, emote_type)
-            else:
-                await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket)
+            history.append({"role": "assistant", "content": assistant_text})
+            await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, message_id)
         else:
-            if not assistant_text:
-                model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
-                chat_response = await client.chat.completions.create(
-                    model=model_ver,
-                    messages=history
-                )
-                
-                assistant_text = chat_response.choices[0].message.content
-                history.append({"role": "assistant", "content": assistant_text})
-                return {
-                    "assistant_text": assistant_text
-                }
-            else:
-                assistant_text += "Click the emote button to see it."
+            model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+            chat_response = await client.chat.completions.create(
+                model=model_ver,
+                messages=history
+            )
+            
+            assistant_text = chat_response.choices[0].message.content
+            history.append({"role": "assistant", "content": assistant_text})
+            return {
+                "assistant_text": assistant_text
+            }
+            hasEmote, emote_type = determine_voice_and_emote_type(history, assistant_text, user_text)
             return {
                 "assistant_text": assistant_text,
                 "emote_type": emote_type

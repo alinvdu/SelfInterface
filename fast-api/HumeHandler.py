@@ -24,7 +24,7 @@ class HumeWebSocketHandler:
         
         # Define thresholds for emotions
         self.FACE_EMOTION_THRESHOLD = 0.42
-        self.VOICE_EMOTION_THRESHOLD = 0.15
+        self.VOICE_EMOTION_THRESHOLD = 0.25
         
     def start_emotion_capture(self):
         """Mark the start of emotion capture"""

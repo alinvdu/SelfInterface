@@ -41,7 +41,7 @@ const AssistantMessage = ({ text, extraStyles = {} }) => (
   </div>
 );
 
-const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView, setShowPrivacyPolicyDialog }) => {
+const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView, setShowPrivacyPolicyDialog, isMobile }) => {
   // Slider state
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -377,13 +377,13 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           marginBottom: "2rem" 
         }}>
           <GiBrain style={{
-            fontSize: 38,
+            fontSize: isMobile ? 24 : 38,
             color: "white",
             marginRight: 10
           }} />
           <div style={{ 
             color: "white", 
-            fontSize: "23px",
+            fontSize: isMobile ? 18 : "23px",
             margin: 0
           }}>
             Self AI
