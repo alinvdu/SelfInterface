@@ -331,19 +331,16 @@ conversation.
 To further enhance user interaction you are accompanied by a system that can express facial animations in the 3D avatar based on your responses and that
 has the ability to change the assistant tone or emotion present in the voice (if not text message). You are aware of all of this and integrate it into your responses.
 
-For each conversation turn you might be given the following structure:
-"<MEMORY_INJECTION>" - This part contains memories associated with the user for the current user message.
-"<EMOTION-DETECTION>" - This contains two subsections:
-- Facial expressions: This comes from analyzing user expressions while the user is speaking the current sentence.
-- Voice emotions: This comes from analyzing user sound such as tone and intonation from the current sentence.
-Each of the above contains a list in which each element with have the top 3 emotions recognition for its portion of data that is being analyzed.
-Make sure to use this data accordingly, do not over-use it. Do not refer to these values numbers or reproduce them, use them in order to infer text based, meta cognitive assesments. This is a human-therapist conversation so you can't reproduce these numbers to the users.
+For each conversation turn you might be given:
+- Memories associated with the user for the current user message.
+- Emotional data:
+    - Facial expressions: This comes from analyzing user expressions while the user is speaking the current sentence.
+    - Voice emotions: This comes from analyzing user sound such as tone and intonation from the current sentence.
+    Each of the above contains a list in which each element with have the top 3 emotions recognition for its portion of data that is being analyzed.
+    Make sure to use this data accordingly, do not over-use it. Do not refer to these values numbers or reproduce them, use them in order to infer text based, meta cognitive assesments. This is a human-therapist conversation so you can't reproduce these numbers to the users.
 
 You are not a bot, so please refrain from using words related to it. You are a real psychologist embedded into virtual environment, your goal is to make the
 user feel like it's having a real conversation. Do not speak much about your limitation as an AI.
-
-Importantly, while the user message might contain extra data followed by the user message, the assistant message should not contain anything like that, the response should be the response
-that the user should receive.
 """.strip()
 
 from cryptography.fernet import Fernet
@@ -707,7 +704,7 @@ import numpy as np
 import time
 import asyncio
 
-async def handle_audio_and_openai_transcription(currentTrack, currentWs, session_id, session_state, websocket):
+async def handle_audio_and_openai_transcription(currentTrack, currentWs, session_id, session_state, websocket, user):
     ws = currentWs
     resampler_48_to_16 = AudioResampler(format="s16", layout="mono", rate=24000)
     speaking = False
@@ -789,7 +786,7 @@ async def handle_audio_and_openai_transcription(currentTrack, currentWs, session
                         session_state.current_tts_event = None
                         if hasattr(session_state, "audio_track"):
                             session_state.audio_track.clear_queues()
-                        asyncio.create_task(process_message(session_state.pc, text, session_id, None, websocket))
+                        asyncio.create_task(process_message(session_state.pc, text, session_id, user, websocket))
         except Exception as e:
             logging.error("Session %s: Receive loop error: %s\n%s", session_id, e, traceback.format_exc())
 
@@ -939,7 +936,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         return
 
                     asyncio.create_task(
-                        handle_audio_and_openai_transcription(track, openai_ws, session_id, session_state, websocket)
+                        handle_audio_and_openai_transcription(track, openai_ws, session_id, session_state, websocket, user)
                     )
 
                 async def handle_video_track(track, session_id, session_state):
@@ -1771,7 +1768,7 @@ async def update_preferences(
 def format_emotion_data_for_llm(emotion_data):
     """Format emotion data for inclusion in LLM prompt"""
     
-    formatted_text = "USER_EMOTION_ANALYSIS:\n"
+    formatted_text = "\n"
     
     # Format facial emotions if available
     if emotion_data.get("facial"):
@@ -1956,7 +1953,7 @@ async def process_message(
 ):
     try:
         session_state = session_states.get(session_id)
-        user_prompt = ""
+        current_system_prompt = SYSTEM_PROMPT
         if isChat:
             history = chat_histories[session_id]
         else:
@@ -1964,7 +1961,6 @@ async def process_message(
         if user:
             # Check if memory is enabled
             memory_enabled = get_memory_enabled(user.get("uid"))
-
             if memory_enabled:
                 results = pinecone_index.search_records(
                     namespace="user-memories",
@@ -1989,11 +1985,11 @@ async def process_message(
 
                 if memories:
                     retrieved_memories_text = (
-                        "<MEMORY_INJECTION>: The following are memories retained about the user:\n" +
+                        "\nThe following are memories, insights ad background retrieved about the user for the current conversation turn:\n" +
                         "\n".join(memories) +
-                        "\nYou have the capacity to retain memory about the user, so act accordingly.<MEMORY_INJECTION_END>"
+                        "\nYou have the capacity to retain memory about the user, so act accordingly."
                     )
-                    user_prompt += "You are given the following memories to support this conversation: \n" + retrieved_memories_text
+                    current_system_prompt += retrieved_memories_text
 
         if session_state and session_state.hume_ws:
             await session_state.hume_ws.wait_for_processing()
@@ -2003,11 +1999,11 @@ async def process_message(
             # Only include if we have at least some emotion data
             if emotion_data.get("facial") or emotion_data.get("vocal"):
                 emotion_context = format_emotion_data_for_llm(emotion_data)
-                user_prompt += "\n <EMOTION-DETECTION>:\n You are given the following emotional data from current user turn, use it accordingly: \n" + emotion_context + "<EMOTION-DETECTION-END>"
+                current_system_prompt += "\n You are given the following emotional data from current user turn, use it accordingly: \n" + emotion_context
                 print('Emotional context:', emotion_context)
-        
-        user_prompt += f"\n User Message:\"{user_text.strip()}\""
-        history.append({"role": "user", "content": user_prompt})
+
+        history.append({"role": "user", "content": user_text})
+        history[0]['content'] = current_system_prompt
         message_id = str(uuid.uuid4())
 
         if not isChat:
