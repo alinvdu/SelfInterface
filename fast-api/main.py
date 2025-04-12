@@ -1966,10 +1966,10 @@ async def process_message(
                     namespace="user-memories",
                     query={
                         "inputs": {"text": user_text},
-                        "top_k": 15,
+                        "top_k": 35,
                         "filter": {"user_id": {"$eq": user["uid"]}}
                     },
-                    fields=["text", "is_encrypted"]
+                    fields=["text", "is_encrypted", "category"]
                 )
                 memories = []
                 result = results.get("result", {})
@@ -1980,7 +1980,7 @@ async def process_message(
                         if fields.get("is_encrypted", False):
                             text = decrypt_text(text)
 
-                        category = fields.get("category", "Unknown Category")
+                        category = fields.get("category", None)
                         if category is not None:
                             memories.append("Category: " + category + "\n Memory: " + text)
                         else:

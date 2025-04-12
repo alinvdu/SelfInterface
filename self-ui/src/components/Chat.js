@@ -430,7 +430,7 @@ const Chat = ({ chat, onSendMessage, isLoading, token, api, onDeleteMessage, onP
             textAlign: "left"
           }}
         >
-          {message.duration ? `Phone call conversation (${message.duration})` : "Phone call conversation"}
+          {"Phone call conversation"}
         </div>
       );
     } else if (message.type === "DATE_SEPARATOR") {
