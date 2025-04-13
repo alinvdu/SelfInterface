@@ -33,6 +33,7 @@ import LoadingDots from "./components/LoadingDots.js";
 import Overlay from "./components/Overlay.js";
 import { BsArrowRight } from "react-icons/bs";
 import PrivacyPolicy from "./PrivacyPolicy.js";
+import SaveDialog from "./components/SaveDialog.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
@@ -155,8 +156,8 @@ function App() {
   const audioContextRef = useRef(null);
 
   const peerConnectionRef = useRef(null);
-  const wsRef = useRef(null); // WebSocket for signaling
-  const analyserRef = useRef(null); // For audio analysis
+  const wsRef = useRef(null);
+  const analyserRef = useRef(null);
   const convDetails = useRef(null);
 
   const assistantTalkingRef = useRef(null);
@@ -443,6 +444,8 @@ function App() {
   const [showFirefoxTooltip, setShowFirefoxTooltip] = useState(false);
 
   const [isTranscriptionExpanded, setExpandTranscription] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [conversationToSave, setConversationToSave] = useState(null);
 
   const voiceMessageRef = useRef({})
 
@@ -851,6 +854,11 @@ function App() {
         if (message.emote_type && message.message_id) {
           voiceMessageRef.current[message.message_id] = message.emote_type
         }
+      }  else if (message.type === "CONVERSATION_HISTORY") {
+        if (message.history && message.history.length > 0) {
+          setConversationToSave(message.history);
+          setShowSaveDialog(true);
+        }
       } else if (message.type === "AUDIO_MESSAGE") {
         // Create and store a blob URL for the audio
         const audioBase64 = message.audio;
@@ -991,6 +999,26 @@ function App() {
 
     return <RiVoiceprintFill style={{fontSize: isMobile ? 18 : 21}} />
   }
+
+  const handleSaveConversation = () => {
+    if (!conversationToSave) return;
+
+    const blob = new Blob([JSON.stringify(conversationToSave, null, 2)], { type: 'application/json' });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `conversation_${sessionId}_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setShowSaveDialog(false);
+      setConversationToSave(null);
+    }, 100);
+  };
 
   const handleDisconnect = async () => {
     if (!sessionId) return;
@@ -1567,7 +1595,15 @@ function App() {
           }} />
         </div>
       </div> : null}
-      {/* <BackgroundScene isTalking={isTalking} assistantTalking={assistantTalking} /> */}
+      {showSaveDialog && (
+        <SaveDialog
+          onSave={handleSaveConversation} 
+          onCancel={() => {
+            setShowSaveDialog(false);
+            setConversationToSave(null);
+          }}
+        />
+      )}
       {!showIntroMode && (
       <>
         <div style={{

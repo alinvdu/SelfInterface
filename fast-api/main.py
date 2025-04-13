@@ -415,6 +415,7 @@ from aiortc import RTCConfiguration, RTCIceServer
 
 # Store session states globally
 session_states = {}
+user_states = {}
 class SessionState:
     def __init__(self, model_version):
         self.transcription = ""
@@ -438,6 +439,8 @@ class SessionState:
         self.monitor_task = None
         self.streaming_tts = False
         self.sent_started_talking = False
+        
+        self.is_admin = False
 
 import logging
 import traceback
@@ -1136,6 +1139,18 @@ async def websocket_endpoint(websocket: WebSocket):
                             executor, 
                             lambda: asyncio.run(finalize_conversation(copy.deepcopy(conversation_histories[session_id]), user['uid']))
                         )
+                        
+                        
+                    is_admin = user_states[user['uid']].get("is_admin", False)
+                    if is_admin:
+                        try:
+                            await websocket.send_json({
+                                "type": "CONVERSATION_HISTORY",
+                                "history": conversation_histories[session_id],
+                                "timestamp": dt.datetime.now().timestamp()
+                            })
+                        except Exception as e:
+                            print(f"Failed to send history to admin: {e}")
 
                 # Close the peer connection if it exists
                 if session_id in peer_connections:
@@ -1359,20 +1374,6 @@ def extract_json_from_markdown(text):
             return matches[0].strip()
     return text.strip()
 
-def clean_message_content(content):
-    """
-    Remove content between specific tag pairs:
-    - <MEMORY_INJECTION> and <MEMORY_INJECTION_END>
-    - <EMOTION-DETECTION> and <EMOTION-DETECTION-END>
-    """
-    # Clean memory injection content
-    content = re.sub(r'<MEMORY_INJECTION>.*?<MEMORY_INJECTION_END>', '', content, flags=re.DOTALL)
-    
-    # Clean emotion detection content
-    content = re.sub(r'<EMOTION-DETECTION>.*?<EMOTION-DETECTION-END>', '', content, flags=re.DOTALL)
-    
-    return content
-
 async def finalize_conversation(
     conversation,
     userId
@@ -1381,16 +1382,11 @@ async def finalize_conversation(
     filtered_messages = []
     for msg in conversation:
         # Skip the system prompt but keep other system messages
-        if msg["role"] == "system" and msg["content"].strip() == SYSTEM_PROMPT:
+        if msg["role"] == "system":
             continue
             
         # Copy the message
         cleaned_msg = msg.copy()
-        
-        # Only clean content for user messages
-        if msg["role"] == "user":
-            cleaned_msg["content"] = clean_message_content(msg["content"])
-            
         filtered_messages.append(cleaned_msg)
 
     conversation_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_messages])
@@ -1727,10 +1723,19 @@ async def get_user_preferences(user: dict = Depends(verify_token)):
             }
             # Create the document with default values
             prefs_ref.set(prefs)
-        
+            
+        is_admin = prefs.get("is_admin", False)
+        if user_id not in user_states:
+            user_states[user_id] = {
+                "is_admin": is_admin
+            }
+        else:
+            user_states[user_id]["is_admin"] = is_admin
+
         return prefs
     except Exception as e:
-        print(f"Error getting user preferences: {e}")
+        error_trace = traceback.format_exc()
+        logging.error(f"Error in process_emote_detection: {str(e)}\n{error_trace}")
         raise HTTPException(status_code=500, detail="Error getting user preferences")
 
 @app.post("/update_preferences")
