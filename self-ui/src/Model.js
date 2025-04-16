@@ -3,7 +3,86 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
-window.messageINeed = []
+const microExpressionDefinitions = {
+  // A subtle smile during speech. Combines a gentle mouth smile with a slight cheek raise.
+  micro_smile: {
+    shapeKeys: {
+      "Mouth_Smile_Sharp_L": { default: 0, target: 0.4 },
+      "Mouth_Smile_Sharp_R": { default: 0, target: 0.4 },
+      "Cheek_Raise_L": { default: 0, target: 0.2 },
+      "Cheek_Raise_R": { default: 0, target: 0.2 }
+    }
+  },
+  // A subtle sad expression achieved by a slight brow drop and a mild mouth frown.
+  micro_sad: {
+    shapeKeys: {
+      "Brow_Raise_Inner_L": { default: 0, target: 0.65 },
+      "Brow_Raise_Inner_R": { default: 0, target: 0.65 },
+      "Mouth_Frown_L": { default: 0, target: 0.2 },
+      "Mouth_Frown_R": { default: 0, target: 0.2 }
+    }
+  },
+  // A subtle angry look that compresses the brows and deepens the frown, with a hint of nasal sneer.
+  micro_angry: {
+    shapeKeys: {
+      "Brow_Drop_L": { default: 0, target: 0.65 },
+      "Brow_Drop_R": { default: 0, target: 0.65 },
+      "Nose_Sneer_L": { default: 0, target: 0.25 },
+      "Nose_Sneer_R": { default: 0, target: 0.25 },
+      "Nose_Nostril_Raise_L": { default: 0, target: 0.25 },
+      "Nose_Nostril_Raise_R": { default: 0, target: 0.25 },
+      "Nose_Crease_L": { default: 0, target: 0.2 },
+      "Nose_Crease_R": { default: 0, target: 0.2 }
+    }
+  },
+  // A subtle disappointment that gently lowers the brows and drops the upper part of the mouth.
+  micro_disappointment: {
+    shapeKeys: {
+      "Brow_Raise_Inner_L": { default: 0, target: 0.65 },
+      "Brow_Raise_Inner_R": { default: 0, target: 0.65 }
+    }
+  },
+  // A subtle confused expression using slightly raised inner brows and a small stretch of the mouth.
+  micro_confusion: {
+    shapeKeys: {
+      "Brow_Raise_Inner_L": { default: 0, target: 0.25 },
+      "Brow_Raise_Inner_R": { default: 0, target: 0.25 },
+      "Mouth_Stretch_L": { default: 0, target: 0.1 },
+      "Mouth_Stretch_R": { default: 0, target: 0.1 }
+    }
+  },
+  // A subtle concentration that tightens the mouth.
+  micro_concentration: {
+    shapeKeys: {
+      "Mouth_Tighten_L": { default: 0, target: 0.4 },
+      "Mouth_Tighten_R": { default: 0, target: 0.4 },
+      "Brow_Drop_L": { default: 0, target: 0.2 },
+      "Brow_Drop_R": { default: 0, target: 0.2 },
+      "Eye_Squint_L": { default: 0, target: 0.2 },
+      "Eye_Squint_R": { default: 0, target: 0.2 }
+    }
+  },
+  // A subtle moment of recognition with a modest raise of the outer brows.
+  micro_recognition: {
+    shapeKeys: {
+      "Brow_Raise_Inner_L": { default: 0, target: 0.3 },
+      "Brow_Raise_Inner_R": { default: 0, target: 0.3 },
+      "Mouth_Smile_Sharp_L": { default: 0, target: 0.2 },
+      "Mouth_Smile_Sharp_R": { default: 0, target: 0.2 }
+    }
+  },
+  // A subtle surprised look that widens the eyes and opens the mouth slightly.
+  micro_surprise: {
+    shapeKeys: {
+      "Eye_Wide_L": { default: 0, target: 0.3 },
+      "Eye_Wide_R": { default: 0, target: 0.3 },
+      "Brow_Raise_Inner_L": { default: 0, target: 0.55 },
+      "Brow_Raise_Inner_R": { default: 0, target: 0.55 },
+      "Brow_Raise_Outer_L": { default: 0, target: 0.55 },
+      "Brow_Raise_Outer_R": { default: 0, target: 0.55 },
+    }
+  }
+};
 
 function Model({ 
   scale = 0.1, 
@@ -12,7 +91,8 @@ function Model({
   isPlaying = false,
   currentEmote = null,
   setCurrentEmote = () => {},
-  introPosition = false,
+  currentMicroExpression = null,
+  setCurrentMicroExpression = () => {},
   onLoad
 }) {
   const { scene, animations } = useGLTF('/assets/ai-modern-psychologist.glb');
@@ -35,6 +115,16 @@ function Model({
 
   const isPlayingRef = useRef(isPlaying);
   const isPausedRef = useRef(false);
+
+  const microExpressionsShapeKeysRef = useRef({});
+  const microExpressionTargetsRef = useRef({});
+
+  const lastSmoothingTimeRef = useRef(performance.now());
+
+  const currentMicroExpressionRef = useRef(currentMicroExpression);
+  useEffect(() => {
+    currentMicroExpressionRef.current = currentMicroExpression;
+  }, [currentMicroExpression]);
   
   // Initialize jaw movement quaternion sequence
   const jawMovementVectorRef = useRef([]);
@@ -511,28 +601,6 @@ function Model({
   };
 
   useEffect(() => {
-    // if (prevAssistantTalkingRef.current === true && assistantTalking === false) {
-    //   // Get the current sequence
-    //   const sequence = sequenceRef.current;
-    //   if (sequence && sequence.visemes && sequence.visemes.length > 0) {
-    //     const lastViseme = sequence.visemes[sequence.visemes.length - 1];
-    //     const totalDuration = lastViseme.end;
-    //     const remainingTime = totalDuration - animationTimeRef.current;
-    //     const progressPercentage = ((animationTimeRef.current / totalDuration) * 100).toFixed(2);
-        
-    //     console.log(`Animation stopped at: ${progressPercentage}% complete`);
-    //     console.log(`Time remaining: ${remainingTime.toFixed(2)}ms out of ${totalDuration}ms total`);
-        
-    //     // Also push to your global array
-    //     window.messageINeed.push({
-    //       stoppedAt: animationTimeRef.current,
-    //       totalDuration,
-    //       progressPercentage: parseFloat(progressPercentage),
-    //       remainingTime
-    //     });
-    //   }
-    // }
-  
     // Clear any existing interval
     if (assistantTalking && intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -670,6 +738,17 @@ function Model({
             }
           });
         });
+
+        Object.values(microExpressionDefinitions).forEach(def => {
+          if (!def.shapeKeys) return;
+            Object.entries(def.shapeKeys).forEach(([keyName, keyData]) => {
+              const index = object.morphTargetDictionary[keyName];
+              if (index !== undefined) {
+                microExpressionsShapeKeysRef.current[keyName] = { mesh: object, index };
+                object.morphTargetInfluences[index] = 0;
+              }
+            });
+          });
       }
     });
     
@@ -755,6 +834,25 @@ function Model({
 
   // Main animation loop
   useFrame(() => {
+    // Handle the mico expressions animations
+    const now = performance.now();
+    const smoothDelta = (now - lastSmoothingTimeRef.current) / 1000; // in seconds
+    lastSmoothingTimeRef.current = now;
+    
+    const smoothingSpeed = 5;  // adjust for faster/slower transitions
+    const lerpFactor = Math.min(1, smoothDelta * smoothingSpeed);  
+    
+    // For each registered micro expression shape key, compute the new influence.
+    Object.entries(microExpressionsShapeKeysRef.current).forEach(([keyName, { mesh, index }]) => {
+      // If a target is provided in the target list, use it; otherwise default to 0.
+      const desiredTarget = microExpressionTargetsRef.current.hasOwnProperty(keyName)
+                            ? microExpressionTargetsRef.current[keyName]
+                            : 0;
+      const currentVal = mesh.morphTargetInfluences[index] || 0;
+      const newVal = currentVal + (desiredTarget - currentVal) * lerpFactor;
+      mesh.morphTargetInfluences[index] = newVal;
+    });
+
     if (!initialized.current || !isAnimating || 
         (isPausedRef.current && !isPlayingRef.current) || 
         jawMovementVectorRef.current.length === 0) {
@@ -971,6 +1069,34 @@ function Model({
       }, 5000); // 5 seconds delay after emotion
     }
   }, [currentEmote, assistantTalking, actions]);
+
+  useEffect(() => {
+    if (assistantTalking && currentMicroExpression) {
+      const microDef = microExpressionDefinitions[currentMicroExpression];
+      if (microDef && microDef.shapeKeys) {
+        const newTargets = {};
+        Object.entries(microDef.shapeKeys).forEach(([keyName, { target }]) => {
+          newTargets[keyName] = target;
+        });
+        microExpressionTargetsRef.current = newTargets;
+      }
+    }
+  }, [assistantTalking, currentMicroExpression, microExpressionDefinitions]);
+
+  useEffect(() => {
+    if (!assistantTalking && currentMicroExpression) {
+      const microDef = microExpressionDefinitions[currentMicroExpression];
+      if (microDef && microDef.shapeKeys) {
+        const resetTargets = {};
+        Object.keys(microDef.shapeKeys).forEach((keyName) => {
+          resetTargets[keyName] = 0;
+        });
+        microExpressionTargetsRef.current = resetTargets;
+      }
+      setCurrentMicroExpression(null);
+    }
+  }, [assistantTalking, currentMicroExpression, setCurrentMicroExpression, microExpressionDefinitions]);
+
   return (
     <group position={[
       0,

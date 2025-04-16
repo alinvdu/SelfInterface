@@ -74,6 +74,9 @@ from av.audio.resampler import AudioResampler
 # debug_info = analyze_audio_chunk(openai_chunk)
 # print(debug_info)
 
+# --- Load environment and initialize services ---
+load_dotenv()
+
 END_OF_STREAM_SENTINEL = object()
 class PCM24kAudioTrack(MediaStreamTrack):
     kind = "audio"
@@ -219,9 +222,6 @@ class PCM24kAudioTrack(MediaStreamTrack):
         if self._producer_task:
             self._producer_task.cancel()
 
-# --- Load environment and initialize services ---
-load_dotenv()
-
 from concurrent.futures import ThreadPoolExecutor
 
 model_version = "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf"
@@ -316,6 +316,40 @@ empathetic_greetings = [
     "Hello, I'm listening. How are things lately?",
     "Hi, I'm here to talk. How you holding up?",
     "Hello, I'm here if you want to talk. How's it going?"
+]
+
+emotion_data_for_greetings = [
+    {
+        "full_emote": "happy"
+    },
+    {
+        "micro_emote": "micro_smile"
+    },
+    None,
+    {
+        "micro_emote": "micro_recognition"
+    },
+    {
+        "micro_emote": "micro_recognition"
+    },
+    {
+        "micro_emote": "micro_smile",
+        "full_emote": "happy"
+    },
+    {
+        "micro_emote": "micro_smile",
+    },
+    {
+        "micro_emote": "micro_concentration"},
+    {
+        "micro_emote": "micro_concentration"
+    },
+    {
+        "micro_emote": "micro_recognition"
+    },
+    {
+        "micro_emote": "micro_recognition"
+    }
 ]
 
 # System prompt.
@@ -652,8 +686,7 @@ async def generate_tts_response(text):
         response = client.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="onyx",
-            input=text,
-            instructions=standard_voice_properties
+            input=text
         )
         
         # Get audio as bytes
@@ -987,7 +1020,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     elif track.kind == "video":
                         asyncio.create_task(handle_video_track(track, session_id, session_state))
 
-                proactive_text = random.choice(empathetic_greetings)
+                index = random.randrange(len(empathetic_greetings))
+                proactive_text = empathetic_greetings[index]
+                proactive_emotion = emotion_data_for_greetings[index]
 
                 visemes = generate_viseme_timings(proactive_text)
                 print('Proactive message for phone call: ', proactive_text)
@@ -996,6 +1031,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     "text": proactive_text,
                     "visemes": visemes
                 })
+                
+                if proactive_emotion:
+                    await websocket.send_json({
+                        "type": "EMOTE_FOR_CONV",
+                        "emotional_response": {
+                            **proactive_emotion,
+                            "response_type": "express_emote"
+                        }
+                    })
+                
                 history = conversation_histories[session_id]
                 if not history:
                     conversation_histories[session_id] = {
@@ -1286,7 +1331,7 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket, message_id=None)
             while True:
                 if session_state.audio_track._frame_queue.empty() and session_state.audio_track._pcm_queue.empty() and not session_state.streaming_tts:
                     # Wait just a bit longer to confirm empty
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(1)
                     payload = {"type": "FINISHED_TALK",
                                "message_id": message_id}
                     await websocket.send_json(payload)
@@ -1312,6 +1357,10 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket, message_id=None)
                 if session_state.current_tts_event != my_event_id:
                     break
                 if not session_state.sent_started_talking:
+                    await websocket.send_json({
+                        "type": "STARTED_TALKING",
+                        "message_id": message_id
+                    })
                     session_state.sent_started_talking = True
                 audio_track.write_pcm(chunk)
 
@@ -1326,7 +1375,6 @@ async def stream_tts_to_webrtc(pc, text, session_id, websocket, message_id=None)
     if hasattr(session_state, "fill_task"):
         session_state.fill_task.cancel()
     session_state.fill_task = asyncio.create_task(fill_task())
-
 
 # --- Generate proactive message ---
 async def generate_proactive_message(user: Optional[dict]):
@@ -1809,51 +1857,6 @@ def clean_message_content(content):
     
     return content
 
-# Router based agent
-async def determine_response_type(conversation_history, assistant_text):
-    prompt = f"""
-    The AI psychologist you assist is embodied through an AI avatar can show expressions or engage with the user verbally.
-
-    You are given:
-    * Conversation history (including user question):
-        {conversation_history}
-    * Assistant response:
-        {assistant_text}
-
-    Your goal is to decide if emotion should be embedded based on the response in order to enhance the interactivity of the avatar and enhance user experience.
-    Remember, the goal of this mechanism is to make the user engaged but also not make it too obvious, also not repetitive (you are presented with the emotion expressed on every message you can make use of that).
-
-    Return your response as JSON:
-    {{
-        "response_type": "no_expression" or "express_emote",
-        "emote_type": "one of: happy, sad, anger, or disappointment"
-    }}
-    Provide only the JSON and nothing else.
-    """
-    
-    decision_response = await client.chat.completions.create(
-        model=model_version_extraction,
-        messages=[
-            {"role": "system", "content": "You are an emotion decision-making assistant for an AI psychologist virtual platform."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    
-    try:
-        decision_text = decision_response.choices[0].message.content
-        decision = extract_json_from_markdown(decision_text)
-        
-        try:
-            parsed_response = json.loads(decision)
-        except Exception as e:
-            print('Cannot parse JSON for deciding summarization', e)
-            return
-        return parsed_response
-    except Exception as e:
-        print(f"Error determining response type: {e}")
-        return {"response_type": "no_expression"}
-
-
 standard_voice_properties = f"""
 - Identity: Psychologist.
 - Voice Affect: Reassuring. Competent and in control, instilling trust.
@@ -1865,33 +1868,59 @@ standard_voice_properties = f"""
 
 async def determine_response_properties(conversation_history, assistant_text, user_message):
     prompt = f"""
-    The AI psychologist you assist is embodied through an AI avatar that can show expressions when chatting with users.
+    The AI psychologist you assist is embodied as an AI avatar whose emotional expression is based on an integrated architecture.
+    Its emotional module not only adapts its personality and memory, but it also controls facial animations in two distinct ways:
+    
+    1. **During Conversation (Micro Expressions):**
+       These are subtle, rapidly modulated facial expressions that are synchronized with speech (via visemes and phoneme tagging). 
+       They may include cues such as:
+         - micro_smile
+         - micro_sad
+         - micro_angry
+         - micro_disappointment
+         - micro_confusion
+         - micro_concentration
+         - micro_recognition
+         - micro_surprise
+
+    2. **After Conversation (Full Expressions):**
+       These are more pronounced emotional displays, used once speaking concludes, to enhance expressiveness and connection.
+       The following are available
+         - happy
+         - anger
+
+    3. **Combined Expression:**
+       In some cases the context might call for a careful combination of both subtle micro expressions during speech and a more explicit full emotion once speaking stops. Use this option only if it feels natural and avoids repetition.
 
     You are given:
-    * Conversation history (including user question):
+    * Conversation history (including the user’s questions):
         {conversation_history}
     * Assistant response:
         {assistant_text}
+        
+    Notes:
+    - Be careful at the current assistant response, assess information from it in order to choose the right emotions expressions.
+    - Some emotions are harder to detect such as recognition and surprise. Try to balance out and be as accurate as possible.
 
-    Your goal is to decide if an emotion should be embedded based on the response to enhance interactivity.
-    Consider:
-    - Is the response emotional or engaging enough to warrant an expression?
-    - Would an emotion make this interaction more authentic and engaging?
-    - Aim to be varied and natural with emotional expressions, not repetitive
+    Your goal is to determine if and how an emotional expression should be embedded into the assistant's response to enhance user engagement.
+    Consider that the objective is to make the experience interactive without being overly obvious or repetitive. Use the integrated emotional model—where during conversation the avatar can display micro expressions, and after conversation it may display a full-blown emotion, or even a thoughtful combination of both.
 
-    Return ONLY a JSON object with this structure:
+    Return your response as JSON in the format below:
+
     {{
         "response_type": "no_expression" or "express_emote",
-        "emote_type": "one of: happy, sad, anger, disappointment, surprise"
+        "micro_emote": "if micro emote should be displayed, choose one of: micro_smile, micro_sad, micro_angry, micro_disappointment, micro_confusion, micro_concentration, micro_recognition, micro_surprise; otherwise null",
+        "full_emote": "if full emote is appropriate based on the available emotes, choose one of these: happy, anger; otherwise null",
     }}
-    Return valid JSON with all line breaks escaped (\\n) inside strings.
+
+    Provide only the JSON and nothing else.
     """
     
     try:
         decision_response = await client.chat.completions.create(
             model=model_version_extraction,
             messages=[
-                {"role": "system", "content": "You are an emotion and voice analysis assistant for an AI psychologist platform."},
+                {"role": "system", "content": "You are an emotion assistant for an AI psychologist platform."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -1900,24 +1929,6 @@ async def determine_response_properties(conversation_history, assistant_text, us
         decision = extract_json_from_markdown(decision_text)
         try:
             parsed_response = json.loads(decision)
-            
-            # Map any alternative emotion names to our supported set
-            if parsed_response.get("response_type") == "express_emote":
-                emotion_mapping = {
-                    "joy": "happy", "delight": "happy", "happiness": "happy", "excited": "happy",
-                    "frustration": "anger", "rage": "anger", "annoyed": "anger", 
-                    "upset": "disappointment", "depressed": "sad",
-                    "shocked": "surprise", "amazed": "surprise"
-                }
-                
-                emote_type = parsed_response.get("emote_type", "happy")
-                if emote_type in emotion_mapping:
-                    parsed_response["emote_type"] = emotion_mapping[emote_type]
-                
-                # Ensure emote is one of our supported types
-                if parsed_response["emote_type"] not in ["happy", "sad", "anger", "disappointment", "surprise"]:
-                    parsed_response["emote_type"] = "happy"
-                
             return parsed_response
             
         except Exception as e:
@@ -1929,21 +1940,16 @@ async def determine_response_properties(conversation_history, assistant_text, us
 
 async def determine_voice_and_emote_type(history, assistant_text, user_message):
     response = await determine_response_properties(history, assistant_text.strip(), user_message)
-
-    hasEmote = response.get("response_type") == "express_emote"
-    emote_type = response.get("emote_type") if hasEmote else None
-
-    return hasEmote, emote_type
+    return response
 
 async def process_emote_detection(history, assistant_text, user_text, websocket, messageId):
     try:
-        hasEmote, emote_type = await determine_voice_and_emote_type(history, assistant_text, user_text)
-        if hasEmote:
-            await websocket.send_json({
-                "type": "EMOTE_FOR_CONV",
-                "message_id": messageId,
-                "emote_type": emote_type
-            })
+        response = await determine_voice_and_emote_type(history, assistant_text, user_text)
+        await websocket.send_json({
+            "type": "EMOTE_FOR_CONV",
+            "message_id": messageId,
+            "emotional_response": response
+        })
     except Exception as e:
         error_trace = traceback.format_exc()
         logging.error(f"Error in process_emote_detection: {str(e)}\n{error_trace}")

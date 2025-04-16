@@ -101,7 +101,9 @@ function BackgroundScene({
   setCurrentEmote, 
   isIntroMode = false,
   onModelLoaded,
-  isModelVisible=true
+  isModelVisible=true,
+  currentMicroExpression,
+  setCurrentMicroExpression
 }) {
   return (
     <Canvas
@@ -124,13 +126,15 @@ function BackgroundScene({
       <Suspense fallback={null}>
         {isModelVisible && (
           <Model 
-            isPlaying={isTalking} 
-            assistantTalking={assistantTalking} 
-            visemeSequence={visemeSequence} 
-            currentEmote={currentEmote} 
-            setCurrentEmote={setCurrentEmote} 
+            isPlaying={isTalking}
+            assistantTalking={assistantTalking}
+            visemeSequence={visemeSequence}
+            currentEmote={currentEmote}
+            setCurrentEmote={setCurrentEmote}
             introPosition={isIntroMode}
             onLoad={onModelLoaded}
+            currentMicroExpression={currentMicroExpression}
+            setCurrentMicroExpression={setCurrentMicroExpression}
           />
         )}
         <OrbitControls
@@ -333,9 +337,6 @@ function App() {
                   // Start talking immediately
                   setIsTalking(isActive)
                   // Clear any pending silence timeout
-                  if (!assistantTalkingRef.current) {
-                    setAssistantTalking(true);
-                  }
                   if (silenceTimeout) {
                       clearTimeout(silenceTimeout);
                       silenceTimeout = null;
@@ -403,6 +404,7 @@ function App() {
   const [isWsOpen, toggleWsOpen] = useState(false);
   const [chatLoading, setChatLoading] = useState(true);
   const [currentEmote, setCurrentEmote] = useState(null);
+  const [currentMicroExpression, setCurrentMicroExpression] = useState(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
@@ -447,7 +449,8 @@ function App() {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [conversationToSave, setConversationToSave] = useState(null);
 
-  const voiceMessageRef = useRef({})
+  const fullEmoteRef = useRef(null)
+  const microEmoteRef = useRef(null)
 
   useEffect(() => {
     const isFirefoxBrowser = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
@@ -840,19 +843,37 @@ function App() {
 
         // Create a new WebSocket connection with the new session ID
         createAndConnectWs(newSessionData.session_id, token);
-      } else if (message.type === "START_TALK") {
-        setAssistantTalking(true);
       } else if (message.type === "FINISHED_TALK") {
         setAssistantTalking(false);
-        if (message.message_id && voiceMessageRef.current[message.message_id]) {
-          console.log('settings emote: ', voiceMessageRef.current[message.message_id])
+        if (fullEmoteRef.current) {
+          // wait for the previous animations if any, to finish
           setTimeout(() => {
-            setCurrentEmote(voiceMessageRef.current[message.message_id]);
-          }, 50);
+            setCurrentEmote(fullEmoteRef.current)
+            fullEmoteRef.current = null;
+          }, 250);
+        }
+      } else if (message.type === "STARTED_TALKING") {
+        setAssistantTalking(true);
+        if (microEmoteRef.current) {
+          setTimeout(() => {
+            setCurrentMicroExpression(microEmoteRef.current)
+            microEmoteRef.current = null;
+          }, 50)
         }
       } else if (message.type === "EMOTE_FOR_CONV") {
-        if (message.emote_type && message.message_id) {
-          voiceMessageRef.current[message.message_id] = message.emote_type
+        if (message.emotional_response && message.emotional_response.response_type === "express_emote") {
+          if (message.emotional_response.full_emote) {
+            fullEmoteRef.current = message.emotional_response.full_emote
+          }
+
+          if (message.emotional_response.micro_emote) {
+            if (assistantTalkingRef.current) {
+              setCurrentMicroExpression(message.emotional_response.micro_emote)
+            } else {
+              // register it in the ref, will be played later.
+              microEmoteRef.current = message.emotional_response.micro_emote
+            }
+          }
         }
       }  else if (message.type === "CONVERSATION_HISTORY") {
         if (message.history && message.history.length > 0) {
@@ -1503,7 +1524,15 @@ function App() {
             width: "100%",
             height: "100%"
           }}>
-          <BackgroundScene isSmallSize={isSmallSize} isTalking={isTalking} assistantTalking={assistantTalking} visemeSequence={visemes} currentEmote={currentEmote} setCurrentEmote={setCurrentEmote} isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
+          <BackgroundScene
+            currentMicroExpression={currentMicroExpression}
+            setCurrentMicroExpression={setCurrentMicroExpression}
+            isSmallSize={isSmallSize} isTalking={isTalking}
+            assistantTalking={assistantTalking}
+            visemeSequence={visemes}
+            currentEmote={currentEmote}
+            setCurrentEmote={setCurrentEmote}
+            isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
           {shouldShowModelLoader() && <ModelLoader />}
         </div>
       </div>
