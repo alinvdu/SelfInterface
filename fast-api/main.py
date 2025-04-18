@@ -567,15 +567,17 @@ phoneme_to_viseme = {
     # You can expand this further if needed
 }
 
+factor = 1.1
+
 viseme_durations = {
-    "p/m/": 60,
-    "a/ah/": 120,
-    "/ee/": 120,
-    "/oo/": 120,
-    "/ff/vv": 60,
-    "/ch/": 60,
-    "/kk/": 60,
-    "rest": 60
+    "p/m/": 60 * factor,
+    "a/ah/": 120 * factor,
+    "/ee/": 120 * factor,
+    "/oo/": 120 * factor,
+    "/ff/vv": 60 * factor,
+    "/ch/": 60 * factor,
+    "/kk/": 60 * factor,
+    "rest": 60 * factor
 }
 
 async def generate_and_send_proactive_message(user, session_id, websocket):
