@@ -117,6 +117,17 @@ class PCM24kAudioTrack(MediaStreamTrack):
         self._frame_buffer.clear()
         self.buffer.clear()
         self.stop_producing = False
+        
+    def _build_frame(self, frame_data, pts, time_base, sample_rate):
+        """
+        Runs off‑loop in a process.  Converts raw PCM into an AudioFrame.
+        """
+        samples = np.frombuffer(frame_data, dtype=np.int16).reshape(1, -1)
+        frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+        frame.sample_rate = sample_rate
+        frame.pts = pts
+        frame.time_base = time_base
+        return frame
 
     async def _producer_loop(self):
         """
@@ -154,20 +165,20 @@ class PCM24kAudioTrack(MediaStreamTrack):
                         continue  # Otherwise continue waiting for data
 
                 # If we have data to process
-                if len(buffer) >= frame_bytes:
-                    # Slice out one frame's worth
-                    frame_data = buffer[:frame_bytes]
-                    del buffer[:frame_bytes]
-
-                    # Create an AudioFrame
-                    samples = np.frombuffer(frame_data, dtype=np.int16).reshape(1, -1)
-                    frame = AudioFrame.from_ndarray(samples, format="s16", layout="mono")
-                    frame.sample_rate = self.sample_rate
-                    frame.pts = self.frame_pts
-                    frame.time_base = self.time_base
+                if len(self.buffer) >= frame_bytes:
+                    frame_data = self.buffer[:frame_bytes]
+                    del self.buffer[:frame_bytes]
+                    # off‑load heavy work into a process
+                    loop = asyncio.get_running_loop()
+                    frame = await loop.run_in_executor(
+                        executor,
+                        self._build_frame,
+                        frame_data,
+                        self.frame_pts,
+                        self.time_base,
+                        self.sample_rate
+                    )
                     self.frame_pts += self.samples_per_frame
-
-                    # Push it to the _frame_queue
                     await self._frame_queue.put(frame)
 
                 # Sleep to maintain ~20ms cadence
@@ -192,7 +203,12 @@ class PCM24kAudioTrack(MediaStreamTrack):
             return
 
         # Resample, might return multiple frames
-        resampled_frames = self.resampler.resample(frame_24k)
+        loop = asyncio.get_running_loop()
+        resampled_frames = await loop.run_in_executor(
+            executor,
+            self.resampler.resample,
+            frame_24k
+        )
 
         # Ensure we handle list correctly
         if not resampled_frames:
