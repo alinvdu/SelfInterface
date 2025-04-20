@@ -103,7 +103,9 @@ function BackgroundScene({
   onModelLoaded,
   isModelVisible=true,
   currentMicroExpression,
-  setCurrentMicroExpression
+  setCurrentMicroExpression,
+  currentGesture,
+  setCurrentGesture
 }) {
   return (
     <Canvas
@@ -135,6 +137,8 @@ function BackgroundScene({
             onLoad={onModelLoaded}
             currentMicroExpression={currentMicroExpression}
             setCurrentMicroExpression={setCurrentMicroExpression}
+            setCurrentGesture={setCurrentGesture}
+            currentGesture={currentGesture}
           />
         )}
         <OrbitControls
@@ -405,6 +409,7 @@ function App() {
   const [chatLoading, setChatLoading] = useState(true);
   const [currentEmote, setCurrentEmote] = useState(null);
   const [currentMicroExpression, setCurrentMicroExpression] = useState(null);
+  const [currentGesture, setCurrentGesture] = useState(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 786;
@@ -873,6 +878,10 @@ function App() {
               // register it in the ref, will be played later.
               microEmoteRef.current = message.emotional_response.micro_emote
             }
+          }
+
+          if (message.emotional_response.gesture) {
+            setCurrentGesture(message.emotional_response.gesture)
           }
         }
       }  else if (message.type === "CONVERSATION_HISTORY") {
@@ -1532,7 +1541,10 @@ function App() {
             visemeSequence={visemes}
             currentEmote={currentEmote}
             setCurrentEmote={setCurrentEmote}
-            isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible} />
+            isIntroMode={showIntroMode} onModelLoaded={handleModelLoaded} isModelVisible={isModelVisible}
+            currentGesture={currentGesture}
+            setCurrentGesture={setCurrentGesture}
+            />
           {shouldShowModelLoader() && <ModelLoader />}
         </div>
       </div>

@@ -319,6 +319,7 @@ app.add_middleware(
 conversation_histories = {}
 chat_histories = {}
 session_greeting_data = {}
+emotes_histories = {}
 
 empathetic_greetings = [
     "Hi there, I'm here to listen, how can I support you today?",
@@ -336,10 +337,12 @@ empathetic_greetings = [
 
 emotion_data_for_greetings = [
     {
-        "full_emote": "happy"
+        "full_emote": "happy",
+        "gesture": "greeting"
     },
     {
-        "micro_emote": "micro_smile"
+        "micro_emote": "micro_smile",
+        "gesture": "greeting"
     },
     None,
     {
@@ -350,21 +353,26 @@ emotion_data_for_greetings = [
     },
     {
         "micro_emote": "micro_smile",
-        "full_emote": "happy"
+        "full_emote": "happy",
+        "gesture": "greeting"
     },
     {
-        "micro_emote": "micro_smile",
+        "micro_emote": "micro_smile"
     },
     {
-        "micro_emote": "micro_concentration"},
+        "micro_emote": "micro_concentration",
+        "gesture": "greeting"
+    },
     {
         "micro_emote": "micro_concentration"
     },
     {
-        "micro_emote": "micro_recognition"
+        "micro_emote": "micro_recognition",
+        "gesture": "greeting"
     },
     {
-        "micro_emote": "micro_recognition"
+        "micro_emote": "micro_recognition",
+        "gesture": "greeting"
     }
 ]
 
@@ -1244,6 +1252,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         "role": "system",
                         "content": SYSTEM_PROMPT
                     }]
+                    
+                if emotes_histories[session_id]:
+                    emotes_histories[session_id] = []
 
                 if user:
                     save_call_event_to_firestore(user.get("uid"), session_id, "ended")
@@ -1620,6 +1631,7 @@ async def new_session(model_version: str = Query("ft:gpt-4o-mini-2024-07-18:pers
     chat_histories[session_id] = [
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
+    emotes_histories[session_id] = []
     
     session_states[session_id] = SessionState(model_version=model_version)
 
@@ -1884,8 +1896,22 @@ standard_voice_properties = f"""
 - Emotions: Enthusiastic, positive.
 """
 
-async def determine_response_properties(conversation_history, assistant_text, user_message):
-    prompt = f"""
+def inject_gestures(conversation_history, emotes_usage):
+    history_copy = [msg.copy() for msg in conversation_history]
+    hi = len(history_copy) - 1
+    ei = len(emotes_usage) - 1
+
+    while hi >= 0 and ei >= 0:
+        if emotes_usage[ei] is not None:
+            history_copy[hi]['gesture_used'] = emotes_usage[ei]
+        hi -= 1
+        ei -= 1
+
+    return history_copy
+
+async def determine_response_properties(conversation_history, assistant_text, user_message, emotes_usage):
+    aug_conversation_history = inject_gestures(conversation_history, emotes_usage)
+    sys_prompt = f"""
     The AI psychologist you assist is embodied as an AI avatar whose emotional expression is based on an integrated architecture.
     Its emotional module not only adapts its personality and memory, but it also controls facial animations in two distinct ways:
     
@@ -1906,16 +1932,35 @@ async def determine_response_properties(conversation_history, assistant_text, us
        The following are available
          - happy
          - anger
-
-    3. **Combined Expression:**
-       In some cases the context might call for a careful combination of both subtle micro expressions during speech and a more explicit full emotion once speaking stops. Use this option only if it feels natural and avoids repetition.
-
+         
+    3. **During Conversation (Gestures):**
+        These are gestures that the avatar can show, such as hand movements and little head movements.
+        The following are available and should be carefully used based on the situation:
+        - hand_to_chin:
+            - Can be used when the avatar is pondering, or brain storming.
+        - arms_crossed_pose:
+            - Use this when:
+                - The conversation becomes serious, deep, or emotional (especially topics like trauma, sadness, identity).
+                - The assistant wants to appear grounded, thoughtful, or emotionally anchored.
+                - The user expresses emotional vulnerability (sadness, confusion, doubt).
+                - It can also be alternated with `hand_to_chin` when reflective, to introduce body language variation.
+                - Use at least occasionally if it hasn’t been used recently.
+        
+        Make sure to use the gestures from time to time. Don't neglect arms_crossed_pose, it's a generalistic gesture that you can use from time to time.
+    4. **Combinations**:
+        Combine micro expressions, gestures and full expressions to create a more engaging experience.
+        The assistant should use these expressions to enhance the conversation and make it more engaging.
+    """
+    
+    prompt = f"""
     You are given:
-    * Conversation history (including the user’s questions):
-        {conversation_history}
+    * Conversation history (including the user’s questions and gesture ussage):
+        {aug_conversation_history}
+        If in the last messages the assistant used gestures a lot, avoid repeating the **same** gesture. Instead, consider rotating gestures if context allows. For example, alternate between `hand_to_chin` and `arms_crossed_pose` during serious or reflective parts.
+
     * Assistant response:
         {assistant_text}
-        
+
     Notes:
     - Be careful at the current assistant response, assess information from it in order to choose the right emotions expressions.
     - Some emotions are harder to detect such as recognition and surprise. Try to balance out and be as accurate as possible.
@@ -1929,6 +1974,7 @@ async def determine_response_properties(conversation_history, assistant_text, us
         "response_type": "no_expression" or "express_emote",
         "micro_emote": "if micro emote should be displayed, choose one of: micro_smile, micro_sad, micro_angry, micro_disappointment, micro_confusion, micro_concentration, micro_recognition, micro_surprise; otherwise null",
         "full_emote": "if full emote is appropriate based on the available emotes, choose one of these: happy, anger; otherwise null",
+        "gesture": "if gesture is appropriate based on the available gestures, choose one of these: greeting, thinking; otherwise null",
     }}
 
     Provide only the JSON and nothing else.
@@ -1938,7 +1984,7 @@ async def determine_response_properties(conversation_history, assistant_text, us
         decision_response = await client.chat.completions.create(
             model=model_version_extraction,
             messages=[
-                {"role": "system", "content": "You are an emotion assistant for an AI psychologist platform."},
+                {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -1956,13 +2002,14 @@ async def determine_response_properties(conversation_history, assistant_text, us
         print(f"Error determining {expected_format}: {e}")
         return {"response_type": "no_expression"}
 
-async def determine_voice_and_emote_type(history, assistant_text, user_message):
-    response = await determine_response_properties(history, assistant_text.strip(), user_message)
+async def determine_voice_and_emote_type(history, assistant_text, user_message, emotes_usage):
+    response = await determine_response_properties(history, assistant_text.strip(), user_message, emotes_usage)
     return response
 
-async def process_emote_detection(history, assistant_text, user_text, websocket, messageId):
+async def process_emote_detection(history, assistant_text, user_text, websocket, messageId, emotes_usage):
     try:
-        response = await determine_voice_and_emote_type(history, assistant_text, user_text)
+        response = await determine_voice_and_emote_type(history, assistant_text, user_text, emotes_usage)
+        emotes_usage.append(response['gesture'])
         await websocket.send_json({
             "type": "EMOTE_FOR_CONV",
             "message_id": messageId,
@@ -2055,8 +2102,10 @@ async def process_message(
                 "message_id": message_id
             })
             
+            emotes_usage = emotes_histories[session_id]
+            
             asyncio.create_task(
-                process_emote_detection(history, assistant_text, user_text, websocket, message_id)
+                process_emote_detection(history, assistant_text, user_text, websocket, message_id, emotes_usage)
             )
 
             history.append({"role": "assistant", "content": assistant_text})
