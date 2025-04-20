@@ -37,7 +37,7 @@ import SaveDialog from "./components/SaveDialog.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
-const api = "http://localhost:8000";
+const api = "https://selfai.live";
 
 const AVAILABLE_MODELS = [
   {

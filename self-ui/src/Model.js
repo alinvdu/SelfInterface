@@ -551,9 +551,9 @@ function Model({
   const CLIP_ACTION = "CLIP_ACTION";
 
   const gesturesActionTypes = {
-    "Arms_Crossed_pose": STATIC_ACTION,
-    "Greeting": CLIP_ACTION,
-    "Hand_to_chin": CLIP_ACTION
+    "arms_crossed_pose": STATIC_ACTION,
+    "greeting": CLIP_ACTION,
+    "hand_to_chin": CLIP_ACTION
   }
 
   // Set up animations for body movements
@@ -663,7 +663,18 @@ function Model({
     }
 
     if (gestureActionRef.current) {
-      gestureActionRef.current.fadeOut(0.5);
+      gestureActionRef.current.fadeOut(0.35);
+      setTimeout(() => {
+        gestureActionRef.current.stop();
+        gestureActionRef.current.setEffectiveWeight(0);
+        gestureActionRef.current.reset();
+
+        mixer.uncacheAction(gestureActionRef.current.getClip(), scene);
+        mixer.uncacheClip(gestureActionRef.current.getClip());
+
+        gestureActionRef.current = null;
+        setCurrentGesture(null);
+      }, 350);
     }
 
     if (initialized.current) {
@@ -1159,19 +1170,20 @@ function Model({
 
     let onFinished;
 
-    if (actionType === STATIC_ACTION) {
-      idleAnimationRef.current?.fadeOut(0.2);
+    if (actionType === CLIP_ACTION) {
+      idleAnimationRef.current?.fadeOut(0);
       // Set the static action
       action.clampWhenFinished = true;
       action.setLoop(THREE.LoopOnce, 1);
-      action.reset().fadeIn(0.2).play();
+      action.timeScale = 0.75;
+      action.reset().play();
 
       onFinished = (e) => {
         if (e.action !== action) return;
-        action.fadeOut(0.2).stop();
+        action.stop();
     
         mixer.removeEventListener('finished', onFinished);
-        idleAnimationRef.current?.reset().fadeIn(0.2).play();
+        idleAnimationRef.current?.reset().play();
   
         intervalRef.current = setInterval(playRandomAnimation, 15000);
   
@@ -1180,17 +1192,16 @@ function Model({
       };
       mixer.addEventListener('finished', onFinished);
     } else {
-      const rawClip = action.getClip(); 
+      const rawClip = action.reset().getClip().clone();
       const poseAdd = THREE.AnimationUtils.makeClipAdditive(rawClip, 0, idleAnimationRef.current.getClip());
       const poseAct = mixer.clipAction(poseAdd);
       poseAct.setEffectiveWeight(1.0);
-      // action.setLoop(THREE.LoopOnce, 1);
       poseAct
         .reset()
         .setLoop(THREE.LoopRepeat)
         .clampWhenFinished = true;
       poseAct
-        .fadeIn(0.8)           // blend on top of idle
+        .fadeIn(0.5)
         .play();
       gestureActionRef.current = poseAct;
     }

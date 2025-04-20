@@ -342,39 +342,37 @@ emotion_data_for_greetings = [
     },
     {
         "micro_emote": "micro_smile",
-        "gesture": "arms_crossed_pose"
-    },
-    {
-        "gesture": "arms_crossed_pose"
-    },
-    {
-        "micro_emote": "micro_recognition",
-        "gesture": "arms_crossed_pose"
-    },
-    {
-        "micro_emote": "micro_recognition",
         "gesture": "greeting"
+    },
+    None,
+    {
+        "micro_emote": "micro_recognition"
+    },
+    {
+        "micro_emote": "micro_recognition"
     },
     {
         "micro_emote": "micro_smile",
-        "full_emote": "happy"
-    },
-    {
-        "micro_emote": "micro_smile",
+        "full_emote": "happy",
         "gesture": "greeting"
     },
     {
-        "micro_emote": "micro_concentration"
+        "micro_emote": "micro_smile"
     },
     {
         "micro_emote": "micro_concentration",
         "gesture": "greeting"
     },
     {
-        "micro_emote": "micro_recognition"
+        "micro_emote": "micro_concentration"
     },
     {
-        "micro_emote": "micro_recognition"
+        "micro_emote": "micro_recognition",
+        "gesture": "greeting"
+    },
+    {
+        "micro_emote": "micro_recognition",
+        "gesture": "greeting"
     }
 ]
 
@@ -1050,7 +1048,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 index = random.randrange(len(empathetic_greetings))
                 proactive_text = empathetic_greetings[index]
-                proactive_emotion = emotion_data_for_greetings[0]
+                proactive_emotion = emotion_data_for_greetings[index]
 
                 visemes = generate_viseme_timings(proactive_text)
                 print('Proactive message for phone call: ', proactive_text)
@@ -1938,20 +1936,27 @@ async def determine_response_properties(conversation_history, assistant_text, us
     3. **During Conversation (Gestures):**
         These are gestures that the avatar can show, such as hand movements and little head movements.
         The following are available and should be carefully used based on the situation:
-        - thinking -> only use this when the avatar is pondering, or brain storming.
-        - arms_crossed -> used for general conversation and other situations, like something offensive being said, or the avatar expressing defensive positions.
-        Notes:
-        Do not overuse gestures, they should be used only when the context calls for it.
-
-    3. **Combined Expression:**
-       In some cases the context might call for a careful combination of both subtle micro expressions during speech and a more explicit full emotion once speaking stops. Use this option only if it feels natural and avoids repetition.
+        - hand_to_chin:
+            - Can be used when the avatar is pondering, or brain storming.
+        - arms_crossed_pose:
+            - Use this when:
+                - The conversation becomes serious, deep, or emotional (especially topics like trauma, sadness, identity).
+                - The assistant wants to appear grounded, thoughtful, or emotionally anchored.
+                - The user expresses emotional vulnerability (sadness, confusion, doubt).
+                - It can also be alternated with `hand_to_chin` when reflective, to introduce body language variation.
+                - Use at least occasionally if it hasn’t been used recently.
+        
+        Make sure to use the gestures from time to time. Don't neglect arms_crossed_pose, it's a generalistic gesture that you can use from time to time.
+    4. **Combinations**:
+        Combine micro expressions, gestures and full expressions to create a more engaging experience.
+        The assistant should use these expressions to enhance the conversation and make it more engaging.
     """
     
     prompt = f"""
     You are given:
     * Conversation history (including the user’s questions and gesture ussage):
         {aug_conversation_history}
-        If in the last messages the assistant used gestures a lot then avoid using them in the current response otherwise consider using them.
+        If in the last messages the assistant used gestures a lot, avoid repeating the **same** gesture. Instead, consider rotating gestures if context allows. For example, alternate between `hand_to_chin` and `arms_crossed_pose` during serious or reflective parts.
 
     * Assistant response:
         {assistant_text}
@@ -1999,7 +2004,6 @@ async def determine_response_properties(conversation_history, assistant_text, us
 
 async def determine_voice_and_emote_type(history, assistant_text, user_message, emotes_usage):
     response = await determine_response_properties(history, assistant_text.strip(), user_message, emotes_usage)
-    print('emote response', response)
     return response
 
 async def process_emote_detection(history, assistant_text, user_text, websocket, messageId, emotes_usage):
