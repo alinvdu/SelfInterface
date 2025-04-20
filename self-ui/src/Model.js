@@ -97,7 +97,7 @@ function Model({
   currentGesture = null,
   setCurrentGesture = () => {}
 }) {
-  const { scene, animations } = useGLTF('/assets/ai-modern-psychologist-3.glb');
+  const { scene, animations } = useGLTF('/assets/ai-modern-psychologist-2.glb');
   const { actions, mixer } = useAnimations(animations, scene);
   const [isAnimating, setIsAnimating] = useState(false);
   const clockRef = useRef(new THREE.Clock());
