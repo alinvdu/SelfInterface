@@ -93,10 +93,12 @@ function Model({
   setCurrentEmote = () => {},
   currentMicroExpression = null,
   setCurrentMicroExpression = () => {},
-  onLoad
+  onLoad,
+  currentGesture = null,
+  setCurrentGesture = () => {}
 }) {
-  const { scene, animations } = useGLTF('/assets/ai-modern-psychologist.glb');
-  const { actions } = useAnimations(animations, scene);
+  const { scene, animations } = useGLTF('/assets/ai-modern-psychologist-3.glb');
+  const { actions, mixer } = useAnimations(animations, scene);
   const [isAnimating, setIsAnimating] = useState(false);
   const clockRef = useRef(new THREE.Clock());
   const animationTimeRef = useRef(0);
@@ -109,6 +111,7 @@ function Model({
   const prevEmoteRef = useRef(null);
 
   const currentAnimationRef = useRef(null);
+  const idleAnimationRef = useRef(null);
   const availableAnimationsRef = useRef([]);
   const allAnimationsRef = useRef([]);
   const intervalRef = useRef(null);
@@ -122,6 +125,7 @@ function Model({
   const lastSmoothingTimeRef = useRef(performance.now());
 
   const currentMicroExpressionRef = useRef(currentMicroExpression);
+  const gestureActionRef = useRef(null);
   useEffect(() => {
     currentMicroExpressionRef.current = currentMicroExpression;
   }, [currentMicroExpression]);
@@ -474,6 +478,7 @@ function Model({
   
   // References
   const sequenceRef = useRef(visemeSequence);
+  const gesturesRef = useRef({});
   const visemeDefsRef = useRef(visemeDefinitions);
   const shapeKeyMeshesRef = useRef({});
   const currentVisemeRef = useRef(null);
@@ -535,45 +540,74 @@ function Model({
     });
   };
 
+  const gestures = {
+    "Greeting": true,
+    "Hand_to_chin": true,
+    "Arms_Crossed_pose": true
+  }
+
+  const STATIC_ACTION = "STATIC_ACTION"; // additive action that specifies a static pose as target (arms crossed, etc.)
+  // - can be used for the duration of the whole talking animation
+  const CLIP_ACTION = "CLIP_ACTION";
+
+  const gesturesActionTypes = {
+    "Arms_Crossed_pose": STATIC_ACTION,
+    "Greeting": CLIP_ACTION,
+    "Hand_to_chin": CLIP_ACTION
+  }
+
   // Set up animations for body movements
   useEffect(() => {
     if (animations.length > 0) {
       // Set up the idle animation (first one) - this always plays
-      const idleClip = animations[0];
-      const idleAction = actions[idleClip.name];
-      idleAction.timeScale = 0.75;
-      idleAction.reset().play();
+      let idleAction
+      animations.forEach(clip => {
+          if (clip.name === 'Idle') {
+            idleAction = actions[clip.name];
+          }
+
+          if (gestures[clip.name]) {
+            gesturesRef.current[clip.name.toLowerCase()] = actions[clip.name]
+          }
+      });
+      if (idleAction) {
+        idleAnimationRef.current = idleAction;
+        idleAction.timeScale = 0.75;
+        idleAction.reset().play();
+      }
 
       const avoidAnimations = {
         'Angry': true,
-        'Sad': true
+        'Sad': true,
+        'Greeting': true,
+        'Idle': true,
       }
       
       // Store all other animations
-      availableAnimationsRef.current = animations.slice(1).filter(clip => !avoidAnimations[clip.name]).map(clip => ({
+      availableAnimationsRef.current = animations.filter(clip => !avoidAnimations[clip.name]).map(clip => ({
         name: clip.name,
         action: actions[clip.name]
       }));
 
-      allAnimationsRef.current = animations.slice(1).map(clip => ({
+      allAnimationsRef.current = animations.map(clip => ({
         name: clip.name,
         action: actions[clip.name]
       }));
-    }
-  }, [actions, animations]);
+    }}, [actions, animations]);
 
-  const findAnimationByName = (animationName) => {
-    if (!allAnimationsRef.current || allAnimationsRef.current.length === 0) {
-      return null;
-    }
-    
-    // Find animation that contains the search term
-    return allAnimationsRef.current.find(anim => 
-      anim.name.toLowerCase().includes(animationName.toLowerCase())
-    );
+    const findAnimationByName = (animationName) => {
+      if (!allAnimationsRef.current || allAnimationsRef.current.length === 0) {
+        return null;
+      }
+      
+      // Find animation that contains the search term
+      return allAnimationsRef.current.find(anim => 
+        anim.name.toLowerCase().includes(animationName.toLowerCase())
+      );
   };
 
   const playRandomAnimation = () => {
+    if (gestureActionRef.current) return;
     // Stop current animation if any
     if (currentAnimationRef.current) {
       currentAnimationRef.current.fadeOut(0.5);
@@ -626,6 +660,10 @@ function Model({
 
       startAnimation();
       return;
+    }
+
+    if (gestureActionRef.current) {
+      gestureActionRef.current.fadeOut(0.5);
     }
 
     if (initialized.current) {
@@ -1096,6 +1134,73 @@ function Model({
       setCurrentMicroExpression(null);
     }
   }, [assistantTalking, currentMicroExpression, setCurrentMicroExpression, microExpressionDefinitions]);
+
+  useEffect(() => {
+    if (!initialized.current) return;
+    if (!currentGesture) return;
+  
+    const action = gesturesRef.current[currentGesture.toLowerCase()];
+    if (!action) {
+      console.warn(`Unknown gesture: ${currentGesture}`);
+      setCurrentGesture(null);
+      return;
+    }
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (currentAnimationRef.current) {
+      currentAnimationRef.current.fadeOut(0.2);
+      currentAnimationRef.current = null;
+    }
+
+    const actionType = gesturesActionTypes[currentGesture.toLowerCase()]
+
+    let onFinished;
+
+    if (actionType === STATIC_ACTION) {
+      idleAnimationRef.current?.fadeOut(0.2);
+      // Set the static action
+      action.clampWhenFinished = true;
+      action.setLoop(THREE.LoopOnce, 1);
+      action.reset().fadeIn(0.2).play();
+
+      onFinished = (e) => {
+        if (e.action !== action) return;
+        action.fadeOut(0.2).stop();
+    
+        mixer.removeEventListener('finished', onFinished);
+        idleAnimationRef.current?.reset().fadeIn(0.2).play();
+  
+        intervalRef.current = setInterval(playRandomAnimation, 15000);
+  
+        gestureActionRef.current = null;
+        setCurrentGesture(null);
+      };
+      mixer.addEventListener('finished', onFinished);
+    } else {
+      const rawClip = action.getClip(); 
+      const poseAdd = THREE.AnimationUtils.makeClipAdditive(rawClip, 0, idleAnimationRef.current.getClip());
+      const poseAct = mixer.clipAction(poseAdd);
+      poseAct.setEffectiveWeight(1.0);
+      // action.setLoop(THREE.LoopOnce, 1);
+      poseAct
+        .reset()
+        .setLoop(THREE.LoopRepeat)
+        .clampWhenFinished = true;
+      poseAct
+        .fadeIn(0.8)           // blend on top of idle
+        .play();
+      gestureActionRef.current = poseAct;
+    }
+
+    return () => {
+      if (onFinished) {
+        mixer.removeEventListener('finished', onFinished)
+      }
+    };
+  }, [currentGesture]);
 
   return (
     <group position={[
