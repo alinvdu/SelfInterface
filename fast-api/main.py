@@ -1957,6 +1957,7 @@ async def determine_response_properties(conversation_history, assistant_text, us
     * Conversation history (including the user’s questions and gesture ussage):
         {aug_conversation_history}
         If in the last messages the assistant used gestures a lot, avoid repeating the **same** gesture. Instead, consider rotating gestures if context allows. For example, alternate between `hand_to_chin` and `arms_crossed_pose` during serious or reflective parts.
+        If in the last messages gestures were used a lot, take a break and don't use them for a while.
 
     * Assistant response:
         {assistant_text}
