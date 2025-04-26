@@ -46,9 +46,9 @@ const AVAILABLE_MODELS = [
     description: "Calm, empathetic and attentive. Great for a psychologist."
   },
   {
-    id: "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf",
-    name: "Unfiltered Friend",
-    description: "Empathetic, truthful and funny. Might say the wrong thing!"
+    id: "ft:gpt-4o-mini-2024-07-18:personal::BQi6EyD8",
+    name: "Unfiltered Atlas",
+    description: "Raw experience, deeply philosophical and emotional. Great for deep conversations."
   }
 ];
 
