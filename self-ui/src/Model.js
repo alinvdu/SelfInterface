@@ -582,6 +582,9 @@ function Model({
         'Sad': true,
         'Greeting': true,
         'Idle': true,
+        'Arms_Crossed_pose': true,
+        'Hand_to_chin': true,
+        'Arms_Crossed': true
       }
       
       // Store all other animations
