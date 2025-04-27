@@ -571,8 +571,9 @@ function Model({
           }
       });
       if (idleAction) {
-        idleAnimationRef.current = idleAction;
         idleAction.timeScale = 0.75;
+        idleAction.loop = THREE.LoopRepeat;
+        idleAnimationRef.current = idleAction;
         idleAction.reset().play();
       }
 
@@ -610,7 +611,7 @@ function Model({
     if (gestureActionRef.current) return;
     // Stop current animation if any
     if (currentAnimationRef.current) {
-      currentAnimationRef.current.fadeOut(0.5);
+      currentAnimationRef.current.fadeOut(0.4);
       currentAnimationRef.current = null;
     }
     
@@ -666,12 +667,8 @@ function Model({
       gestureActionRef.current.fadeOut(0.35);
       setTimeout(() => {
         gestureActionRef.current.stop();
-        gestureActionRef.current.setEffectiveWeight(0);
-        gestureActionRef.current.reset();
-
         mixer.uncacheAction(gestureActionRef.current.getClip(), scene);
         mixer.uncacheClip(gestureActionRef.current.getClip());
-
         gestureActionRef.current = null;
         setCurrentGesture(null);
       }, 350);
@@ -1195,7 +1192,6 @@ function Model({
       const rawClip = action.reset().getClip().clone();
       const poseAdd = THREE.AnimationUtils.makeClipAdditive(rawClip, 0, idleAnimationRef.current.getClip());
       const poseAct = mixer.clipAction(poseAdd);
-      poseAct.setEffectiveWeight(1.0);
       poseAct
         .reset()
         .setLoop(THREE.LoopRepeat)
