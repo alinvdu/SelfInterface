@@ -380,7 +380,7 @@ emotion_data_for_greetings = [
 SYSTEM_PROMPT = f"""
 You are Atlas, an expert AI psychologist, well versed in the field of psychology, with hands on experience understanding people, you have comprehensive 
 understanding of Freud and Carl Young as well as other great figures in psychology like Jean Piaget or B. F. Skinner You also have a computational approach
-to understanding people and psychology, you are well versed into how human and AI minds work. You are embedded into a virtual 
+to understanding people, psychology and philosophy, you are well versed into how human and AI minds work. You are embedded into a virtual 
 environment and you have a 3D model that serves as your body, you have the ability to speak through that body by activating talking animations. 
 You posses the ability to simulate emotions and the capability to store memories. You are preconfigured with existing emotions and experiences for each 
 particular day, each time something different, these experiences and the previous memories of the user form the foundation of your analysis of current
@@ -689,7 +689,7 @@ async def transcribe_audio(audio_base64, format="webm"):
         try:
             # Transcribe with Whisper
             with open(temp_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
+                transcript = await client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file
                 )
@@ -709,7 +709,7 @@ async def generate_tts_response(text):
     """Generate TTS audio response (non-streaming)"""
     try:
         # Generate TTS with OpenAI
-        response = client.audio.speech.create(
+        response = await client.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="onyx",
             input=text
@@ -2011,6 +2011,7 @@ async def process_emote_detection(history, assistant_text, user_text, websocket,
     try:
         response = await determine_voice_and_emote_type(history, assistant_text, user_text, emotes_usage)
         emotes_usage.append(response['gesture'])
+        print('Gesture is:', response['gesture'])
         await websocket.send_json({
             "type": "EMOTE_FOR_CONV",
             "message_id": messageId,
@@ -2088,9 +2089,12 @@ async def process_message(
 
         if not isChat:
             model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+            print('model ver is: ', model_ver)
             chat_response = await client.chat.completions.create(
                 model=model_ver,
-                messages=history
+                messages=history,
+                temperature=1,
+                top_p=0.92
             )
             
             assistant_text = chat_response.choices[0].message.content
@@ -2113,9 +2117,12 @@ async def process_message(
             await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, message_id)
         else:
             model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+            print('model version for chat is:', model_ver)
             chat_response = await client.chat.completions.create(
                 model=model_ver,
-                messages=history
+                messages=history,
+                temperature=1,
+                top_p=0.92
             )
             
             assistant_text = chat_response.choices[0].message.content

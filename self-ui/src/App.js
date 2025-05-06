@@ -37,7 +37,7 @@ import SaveDialog from "./components/SaveDialog.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
-const api = "https://selfai.live";
+const api = "http://localhost:8000";
 
 const AVAILABLE_MODELS = [
   {
@@ -46,7 +46,7 @@ const AVAILABLE_MODELS = [
     description: "Calm, empathetic and attentive. Great for a psychologist."
   },
   {
-    id: "ft:gpt-4o-mini-2024-07-18:personal::BQi6EyD8",
+    id: "ft:gpt-4o-mini-2024-07-18:personal::BSPWeHlE",
     name: "Unfiltered Atlas",
     description: "Raw experience, deeply philosophical and emotional. Great for deep conversations."
   }
@@ -519,13 +519,10 @@ function App() {
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState(() => {
-    const savedModel = localStorage.getItem("selectedModel");
-    if (savedModel) {
-      try {
-        return JSON.parse(savedModel);
-      } catch (e) {
-        return DEFAULT_MODEL;
-      }
+    const savedModelName = localStorage.getItem("selectedModelName");
+    console.log(savedModelName)
+    if (savedModelName) {
+      return AVAILABLE_MODELS.find(model => model.name === savedModelName)
     }
     return DEFAULT_MODEL;
   });
@@ -597,7 +594,7 @@ function App() {
   
   const handleModelSelect = (model) => {
     setSelectedModel(model);
-    localStorage.setItem("selectedModel", JSON.stringify(model));
+    localStorage.setItem("selectedModelName", model.name);
     setIsModelDropdownOpen(false);
 
     window.location.reload();
@@ -1525,8 +1522,9 @@ function App() {
         position: "fixed",
         top: 0,
         right: 0,
-        width: showIntroMode ? isSmallSize ? "0%" : "45%" : "100%",
+        width: "100%",
         height: "100%",
+        opacity: showIntroMode ? 0 : 1
       }}>
           <div style={{
             position: "relative",
