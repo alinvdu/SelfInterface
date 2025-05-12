@@ -6,7 +6,6 @@ body,
 }
 
 body {
-  background-image: url('env1.jpg');
   background-size: cover;
   background-repeat: repeat;
   background-position: 20% 0%;
@@ -315,4 +314,14 @@ body {
   opacity: 0;
   transform: translateY(-10px);
   pointer-events: none;
+}
+
+.placeholder-white::placeholder {
+  color: white;
+}
+
+.convert-white-hover:hover {
+  background: white;
+  color: black;
+  transition: background-color 0.4s ease, color 0.4s ease;
 }

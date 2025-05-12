@@ -29,6 +29,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
 
   const [scrollPosition, setScrollPosition] = useState(0);
   const scrollRef = useRef(null);
+  const videoCallsOverlay = useRef(null);
+  const textChatOverlay = useRef(null);
     
   useEffect(() => {
     const container = scrollRef.current
@@ -161,17 +163,119 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
 
   const firstGradientScrollPos = 80
   const fillPct = Math.min(scrollPosition / firstGradientScrollPos, 1) * 100;
-  const purple   = "#8DE1FF";
+  const fillPct2 = Math.min(Math.max(scrollPosition - 300, 0) / 80, 1) * 100;
+  const fillPct3 = Math.min(Math.max(scrollPosition - 500, 0) / 200, 1) * 100;
+  const fillPct4 = Math.min(Math.max(scrollPosition - 550, 0) / 80, 1) * 100;
+  const fillPct5 = Math.min(Math.max(scrollPosition - 700, 0) / 550, 1) * 100;
+  const fillPct6 = Math.min(Math.max(scrollPosition - 1020, 0) / 100, 1) * 100;
+  const fillPct7 = Math.min(Math.max(scrollPosition - 980, 0) / 80, 1) * 100;
+  const fillPct8 = Math.min(Math.max(scrollPosition - 1250, 0) / 80, 1) * 100;
+  const fillPct9 = Math.min(Math.max(scrollPosition - 1920, 0) / 80, 1) * 100;
+  const fillPct10 = Math.min(Math.max(scrollPosition - 2040, 0) / 80, 1) * 100;
+  const fillPct11 = Math.min(Math.max(scrollPosition - 2300, 0) / 80, 1) * 100;
+  const blue   = "#8DE1FF";
+  const purple = "#AD60FF";
   const grey     = "#5B585B";
   const stop     = fillPct.toFixed(1) + "%";
+  const stop2     = fillPct2.toFixed(1);
+  const stop3     = fillPct3.toFixed(1);
+  const stop4     = fillPct4.toFixed(1);
+  const stop5     = fillPct5.toFixed(1);
+  const stop6     = fillPct6.toFixed(1);
+  const stop7     = fillPct7.toFixed(1);
+  const stop8     = fillPct8.toFixed(1);
+  const stop9     = fillPct9.toFixed(1);
+  const stop10    = fillPct10.toFixed(1);
+  const stop11    = fillPct11.toFixed(1);
 
   const SMOOTH_PCT = 30
 
   const gradient1Text =
     `linear-gradient(
       to right,
+      ${blue} 0%,
+      ${blue} ${stop},
+      ${grey}   100%
+    )`;
+
+  const gradient2Text =
+    `linear-gradient(
+      to left,
+      ${blue} 0%,
+      ${blue} ${Math.max(stop2 == 100 ? stop2 : stop2 - 10, 0)}%,
+      ${grey} ${Math.min(stop2 + 10, 100)}%,
+      ${grey}   100%
+    )`;
+
+  const gradient3Down = 
+  `linear-gradient(
+      to bottom,
       ${purple} 0%,
-      ${purple} ${stop},
+      ${blue} ${Math.max(stop3 == 100 ? stop3 : stop3 - 10, 0)}%,
+      ${grey} ${Math.min(stop3 + 10, 100)}%,
+      ${grey}   100%
+    )`;
+
+  const gradient4Text =
+    `linear-gradient(
+      to bottom,
+      ${blue} 0%,
+      ${blue} ${Math.max(stop4 == 100 ? stop4 : stop4 - 30, 0)}%,
+      ${grey} ${Math.min(stop4 + 30, 100)}%,
+      ${grey}   100%
+    )`;
+
+  const gradient6Text = 
+  `linear-gradient(
+      to right,
+      ${blue} 0%,
+      ${blue} ${Math.max(stop6 == 100 ? stop6 : stop6 - 30, 0)}%,
+      ${grey} ${Math.min(stop6 + 30, 100)}%,
+      ${grey}   100%
+    )`;
+
+  const gradient7Text = 
+    `linear-gradient(
+        to right,
+        ${purple} 0%,
+        ${blue} ${Math.max(stop7 == 100 ? stop7 : stop7 - 30, 0)}%,
+        ${grey} ${Math.min(stop7 + 30, 100)}%,
+        ${grey}   100%
+      )`;
+
+  const gradient8Text =
+  `linear-gradient(
+    to bottom,
+    ${blue} 0%,
+    ${blue} ${Math.max(stop8 == 100 ? stop8 : stop8 - 30, 0)}%,
+    ${grey} ${Math.min(stop8 + 30, 100)}%,
+    ${grey}   100%
+  )`;
+
+  const gradient9Text =
+  `linear-gradient(
+    to bottom,
+    ${blue} 0%,
+    ${blue} ${Math.max(stop9 == 100 ? stop9 : stop9 - 30, 0)}%,
+    ${grey} ${Math.min(stop9 + 30, 100)}%,
+    ${grey}   100%
+  )`;
+
+  const gradient10Down = 
+  `linear-gradient(
+      to bottom,
+      ${purple} 0%,
+      ${purple} ${Math.max(stop10 == 100 ? stop10 : stop10 - 10, 0)}%,
+      ${grey} ${Math.min(stop10 + 10, 100)}%,
+      ${grey}   100%
+    )`;
+
+  const gradient11Text =
+    `linear-gradient(
+      to bottom,
+      ${blue} 0%,
+      ${blue} ${Math.max(stop11 == 100 ? stop11 : stop11 - 30, 0)}%,
+      ${grey} ${Math.min(stop11 + 30, 100)}%,
       ${grey}   100%
     )`;
 
@@ -181,13 +285,30 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
   const fillFraction  = Math.min(Math.max(raw, 0), 1);
   const fillPctGradient2 = (fillFraction * 100).toFixed(1);
 
-  const gradient2Curve =
-    `linear-gradient(
-      to right,
-      ${purple} 0%,
-      ${purple} ${stop},
-      ${grey}   100%
-    )`;
+  const borderAnimStartScroll = 200;
+  const borderAnimDuration = 200;
+
+  const borderRawFill = (scrollPosition - borderAnimStartScroll) / borderAnimDuration;
+  const borderFillFraction = Math.min(Math.max(borderRawFill, 0), 1);
+  const borderFillPctStr = (borderFillFraction * 100).toFixed(1);
+
+  const animatedBorderActiveColor = purple;
+  const animatedBorderInactiveColor = grey;
+
+  const fillPctBorder = parseFloat(borderFillPctStr); // Make sure this is a number
+  const transitionRange = 20;
+  const halfTransition = transitionRange / 2;
+
+  const startTransition = fillPctBorder > 0 ? fillPctBorder === 100 ? fillPctBorder : Math.max(fillPctBorder - halfTransition, 0).toFixed(1) : 0;
+  const endTransition = fillPctBorder > 0 ? Math.min(fillPctBorder + halfTransition, 100).toFixed(1) : 0;
+
+  const animatedBorderGradient = `linear-gradient(
+    to bottom,
+    ${animatedBorderActiveColor} 0%,
+    ${animatedBorderActiveColor} ${startTransition}%,
+    ${animatedBorderInactiveColor} ${endTransition}%,
+    ${animatedBorderInactiveColor} 100%
+  )`;
 
   return (
     <div
@@ -214,7 +335,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         overflow: "hidden"
       }}
     >
-      <div style={{
+      {!showLoginView && !showCreateAccount && <div style={{
         position: "absolute",
         top: 100,
         left: "50%",
@@ -232,7 +353,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
             width: 20
           }} className="bounce" src="arrow-down.png" />
         </div>
-      </div>
+      </div>}
       <div style={{ 
           display: "flex", 
           justifyContent: "flex-end",
@@ -254,7 +375,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         <video
         style={{
           width: 720,
-          zIndex: 99
+          zIndex: 99,
+          opacity: showCreateAccount || showLoginView ? 0.7 : 1
         }}
           autoPlay={true}
           loop
@@ -267,47 +389,38 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           width: 5,
           height: 245,
           position: "absolute",
-          background: "linear-gradient(to bottom, #B759E9 0%, #8F8F8F 100%)",
+          background: gradient3Down,
           top: 1093,
           left: "50%",
           zIndex: 999
         }} />
-         <div style={{
-          width: 220,
-          height: 5,
-          position: "absolute",
-          background: "linear-gradient(to left, #B759E9 0%, #8F8F8F 100%)",
-          top: 1334,
-          left: "50%",
-          zIndex: 999
-        }} />
         <svg
-          viewBox="0 0 120 710"
+          viewBox="0 0 380 710"
           style={{
             position: 'absolute',
-            top: 1327,
+            top: 1326,
             left: "calc(50%)",
-            marginLeft: 205,
-            width: 120,
-            height: 710,
+            width: 376,
+            height: 700,
             pointerEvents: 'none',
-            zIndex: 999
+            zIndex: 999,
           }}
         >
           <defs>
             <linearGradient
               id="curveGrad3"
               gradientUnits="userSpaceOnUse"
-              x1="0" y1="0"   /* gradient start at top-right */
-              x2="120"  y2="710"  /* gradient end at bottom-left */
+              x1="0" y1="0"
+              x2="380" y2="710"
             >
-              <stop offset="0%"  stopColor="#AD60FF" />
-              <stop offset="100%" stopColor="#AD60FF" />
+              <stop offset="0%" stopColor={blue} />
+              <stop offset={`${stop5 > 0 ? stop5 == 100 ? stop5 : Math.max(stop5 - (SMOOTH_PCT-10)/2, 0) : stop5}%`} stopColor={purple} />
+              <stop offset={`${stop5 > 0 ? Math.min(+stop5 + (SMOOTH_PCT - 10)/2, 100) : stop5}%`} stopColor={grey} />
             </linearGradient>
           </defs>
 
           <path
-            d="M0 10 H80 A48 48 0 0 1 115 50 L115 710"
+            d="M0 10 H280 A48 48 0 0 1 325 50 L325 710"
             stroke="url(#curveGrad3)"
             strokeWidth="5"
             fill="none"
@@ -318,16 +431,23 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         <div style={{
             position: "absolute",
             top: 1200,
-            color: "#8DE1FF",
             fontSize: 33,
-            maxWidth: 240,
+            maxWidth: 340,
             textAlign: "left",
             zIndex: 9991,
             left: "50%",
-            transform: "translateX(-35%)",
+            transform: "translateX(-50%)",
             background: "black"
         }}>
+          <span
+            style={{
+              backgroundImage: gradient4Text,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}
+          >
           Explore Your Inner Core
+          </span>
         </div>
         <video
         style={{
@@ -361,7 +481,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         overflowY: 'auto',
         width: "100%",
         float: 'right',
-        zIndex: 99
+        zIndex: 99,
+        minHeight: "100%"
       }}>
       <div style={{
         display: "flex",
@@ -391,8 +512,19 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         }}>
           <div style={{
             display: "flex",
-            alignItems: "center"
-          }}>
+            alignItems: "center",
+            cursor: "pointer"
+          }}
+          >
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              cursor: "pointer"
+            }}
+            onClick={() => {
+              window.location.href = '/';
+            }}
+            >
             <GiBrain style={{
               fontSize: isMobile ? 28 : 38,
               color: "white",
@@ -404,6 +536,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               margin: 0
             }}>
               Self AI
+            </div>
             </div>
             {/* Back button for login and create account views */}
             {(showLoginView || showCreateAccount) && <button 
@@ -486,8 +619,13 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
             <div style={{ 
               color: "white", 
               fontSize: isMobile ? 19 : "19px",
-              margin: 0
-            }}>
+              margin: 0,
+              cursor: "pointer"
+            }}
+            onClick={() => {
+              toggleLoginView(true)
+            }}
+            >
               Log In
             </div>
           </div>
@@ -498,7 +636,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         alignItems: "center",
         justifyContent: "center",
         flexDirection: "row",
-        width: "100%"
+        width: "100%",
+        minHeight: "100%"
       }}>
       {showCreateAccount ? (
         // Create Account View - Now using RegisterForm component
@@ -616,7 +755,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       fontSize: "17px",
                       marginBottom: "0.5rem",
                       width: "100%",
-                      textAlign: "left"
+                      textAlign: "left",
+                      textShadow: "2px 2px 4px rgba(0, 0, 0, 0.7)"
                     }}>
                       Email
                     </div>
@@ -626,12 +766,15 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       disabled={isLoading}
+                      className="placeholder-white"
                       style={{
                         width: "100%",
                         padding: "0.8rem",
                         borderRadius: "0.5rem",
                         border: "1px solid rgba(255, 255, 255, 0.3)",
                         background: "rgba(255, 255, 255, 0.1)",
+                        backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
                         color: "white",
                         fontSize: "16px",
                         boxSizing: "border-box",
@@ -648,7 +791,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       fontSize: "17px",
                       marginBottom: "0.5rem",
                       width: "100%",
-                      textAlign: "left"
+                      textAlign: "left",
+                      textShadow: "2px 2px 4px rgba(0, 0, 0, 0.7)"
                     }}>
                       Password
                     </div>
@@ -658,11 +802,14 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       disabled={isLoading}
+                      className='placeholder-white'
                       style={{
                         width: "100%",
                         padding: "0.8rem",
                         borderRadius: "0.5rem",
                         border: "1px solid rgba(255, 255, 255, 0.3)",
+                        backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
                         background: "rgba(255, 255, 255, 0.1)",
                         color: "white",
                         fontSize: "16px",
@@ -680,7 +827,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       fontSize: "17px",
                       marginBottom: "0.5rem",
                       width: "100%",
-                      textAlign: "left"
+                      textAlign: "left",
+                      textShadow: "2px 2px 4px rgba(0, 0, 0, 0.7)"
                     }}>
                       Re-type Password
                     </div>
@@ -688,12 +836,15 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       type="password" 
                       placeholder="Confirm your password"
                       value={confirmPassword}
+                      className='placeholder-white'
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       disabled={isLoading}
                       style={{
                         width: "100%",
                         padding: "0.8rem",
                         borderRadius: "0.5rem",
+                        backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
                         border: "1px solid rgba(255, 255, 255, 0.3)",
                         background: "rgba(255, 255, 255, 0.1)",
                         color: "white",
@@ -891,7 +1042,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     fontSize: "17px",
                     marginBottom: "0.5rem",
                     width: "100%",
-                    textAlign: "left"
+                    textAlign: "left",
+                    textShadow: "0px 3px rgba(0, 0, 0, 0.25)"
                   }}>
                     Email
                   </div>
@@ -899,6 +1051,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     type="email" 
                     placeholder="Enter your email"
                     value={email}
+                    className="placeholder-white"
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
                     style={{
@@ -907,6 +1060,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       borderRadius: "0.5rem",
                       border: "1px solid rgba(255, 255, 255, 0.3)",
                       background: "rgba(255, 255, 255, 0.1)",
+                      backdropFilter: "blur(8px)",
+                      WebkitBackdropFilter: "blur(8px)",
                       color: "white",
                       fontSize: "16px",
                       boxSizing: "border-box",
@@ -1015,6 +1170,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       type="email" 
                       placeholder="Enter your email"
                       value={email}
+                      className="placeholder-white"
                       onChange={(e) => setEmail(e.target.value)}
                       disabled={isLoading}
                       style={{
@@ -1023,6 +1179,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                         borderRadius: "0.5rem",
                         border: "1px solid rgba(255, 255, 255, 0.3)",
                         background: "rgba(255, 255, 255, 0.1)",
+                        backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
                         color: "white",
                         fontSize: "16px",
                         boxSizing: "border-box",
@@ -1046,6 +1204,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     <input 
                       type="password" 
                       placeholder="Enter your password"
+                      className="placeholder-white"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       disabled={isLoading}
@@ -1055,6 +1214,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                         borderRadius: "0.5rem",
                         border: "1px solid rgba(255, 255, 255, 0.3)",
                         background: "rgba(255, 255, 255, 0.1)",
+                        backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
                         color: "white",
                         fontSize: "16px",
                         boxSizing: "border-box"
@@ -1345,10 +1506,9 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                           x1="0" y1="0"   /* gradient start at top-right */
                           x2="120"  y2="250"  /* gradient end at bottom-left */
                         >
-                          <stop offset="0%"     stopColor="#8DE1FF" />
-                          <stop offset={`${fillPctGradient2 > 0 ? fillPctGradient2 == 100 ? fillPctGradient2 : Math.max(fillPctGradient2 - SMOOTH_PCT/2, 0) : fillPctGradient2}%`} stopColor="#8DE1FF" />
+                          <stop offset="0%" stopColor="#8DE1FF" />
+                          <stop offset={`${fillPctGradient2 > 0 ? fillPctGradient2 == 100 ? fillPctGradient2 : Math.max(fillPctGradient2 - SMOOTH_PCT/2, 0) : fillPctGradient2}%`} stopColor={"#A36DF7"} />
                           <stop offset={`${fillPctGradient2 > 0 ? Math.min(+fillPctGradient2 + SMOOTH_PCT/2, 100) : fillPctGradient2}%`} stopColor="#5B585B" />
-                          <stop offset="100%"   stopColor="#5B585B" />
                         </linearGradient>
                       </defs>
 
@@ -1377,7 +1537,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   backgroundColor: "rgba(255, 255, 255, 0.9)",
                   color: "#000",
                   border: "none",
-                  padding: "0.8rem 1.5rem",
+                  padding: "0.8rem 1rem 0.8rem 1.5rem",
                   borderRadius: "2rem",
                   fontSize: "16px",
                   fontWeight: "600",
@@ -1386,7 +1546,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   alignItems: "center",
                   transition: "all 0.2s ease",
                   height: 50,
-                  width: 210,
+                  width: 190,
                   }}
                   onMouseOver={(e) => {
                   e.currentTarget.style.transform = "scale(1.05)";
@@ -1416,7 +1576,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 marginTop: 600,
                 fontSize: 30,
                 marginLeft: 0,
-                transform: `translateY(-${scrollPosition > 400 ? 400 : scrollPosition * 1}px)`,
+                transform: `translateY(-${(scrollPosition > 500 ? 500 : scrollPosition) * 0.8}px)`,
                 display: "flex",
                 flexDirection: "column",
                 width: "100%",
@@ -1431,11 +1591,14 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   }}
                 >
                   <div style={{
-                    color: "#8DE1FF",
                     fontSize: 33,
                     position: "relative"
                   }}>
-                    <span>Full Emotional Awareness</span>
+                    <span style={{
+                      backgroundImage: gradient2Text,
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent'
+                    }}>Full Emotional Awareness</span>
                     <div style={{
                       position: 'absolute',
                       display: "flex",
@@ -1463,7 +1626,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                         <div style={{
                         width: 15,
                         height: 15,
-                        backgroundColor: "#AD60FF",
+                        backgroundColor: scrollPosition > 305 ? purple : "#4A4747",
                         borderRadius: 15
                       }}></div>
                       </div>
@@ -1471,7 +1634,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     <div style={{
                       width: 50,
                       height: 5,
-                      backgroundColor: '#4A4747',
+                      backgroundColor: scrollPosition > 300 ? purple : '#4A4747',
                       position: "absolute",
                       right: -100,
                       top: 18
@@ -1503,29 +1666,39 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               <div style={{
                 backgroundColor: "black",
                 borderRadius: 25,
-                border: "5px solid #4A4747",
-                height: 600,
                 overflow: "hidden",
                 position: "absolute",
+                background: animatedBorderGradient,
+                padding: 5,
+                height: 600,
+                backgroundClip: 'padding-box, border-box',
                 top: 0,
-                right: "10%"
+                right: "10%",
+                overflow: "hidden",
               }}>
-              <img style={{
-                width: 500,
-                borderRadius: 25,
-                filter: "grayscale(100%)",
-                transition: "filter 0.5s ease-in-out"
-              }} onMouseEnter={e => {
-                e.target.style.filter = "grayscale(0%)"
-              }} onMouseLeave={e => {
-                e.target.style.filter = "grayscale(100%)"
-              }} src="atlas-smile-purple-filter.png" />
+                <div style={{
+                  overflow: "hidden",
+                  borderRadius: 25,
+                  height: "100%",
+                }}>
+                  <img style={{
+                    width: 500,
+                    borderRadius: 25,
+                    filter: "grayscale(100%)",
+                    background: "black",
+                    transition: "filter 0.5s ease-in-out"
+                  }} onMouseEnter={e => {
+                    e.target.style.filter = "grayscale(0%)"
+                  }} onMouseLeave={e => {
+                    e.target.style.filter = "grayscale(100%)"
+                  }} src="atlas-smile-purple-filter.png" />
+                </div>
               </div>
               <div
                 style={{
                   marginTop: 1100,
                   alignSelf: "flex-start",
-                  transform: `translateY(-${scrollPosition > 1050 ? 1050 : scrollPosition * 1}px)`,
+                  transform: `translateY(-${(scrollPosition > 1250 ? 1250 : scrollPosition) * 0.8}px)`,
                   marginLeft: "25%"
                 }}
               >
@@ -1533,12 +1706,17 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 position: "relative"
               }}>
               <div style={{
-                  color: "#8DE1FF",
                   fontSize: 33,
                   maxWidth: 640,
                   textAlign: "left"
               }}>
-                Pick Your Personality Type
+                <span style={{
+                    backgroundImage: gradient6Text,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent'
+                }}>
+                  Pick Your Personality Type
+                </span>
               </div>
               <div style={{
                   display: "flex",
@@ -1552,19 +1730,27 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 <div style={{
                   display: "flex",
                   flexDirection: "column",
-                  marginTop: 30
+                  marginTop: 25
                 }}>
+                  <div style={{
+                    marginTop: 15,
+                    opacity: 0.75,
+                    fontSize: 17
+                  }}>
+                    Both start from a psychology-oriented conversational base.
+                  </div>
                   <div style={{
                     fontSize: 23,
                     maxWidth: 100,
-                    zIndex: 99
+                    zIndex: 99,
+                    marginTop: 35
                   }}>
                     Atlas
                   </div>
                   <img src="philosophical-icon.png" style={{
                     position: "absolute",
                     left: -85,
-                    top: 70,
+                    top: 140,
                     width: 75
                   }} />
                   <div style={{
@@ -1572,20 +1758,20 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     opacity: 0.75,
                     fontSize: 17
                   }}>
-                    Deep Introspection &bull; Psychology &bull; Philosophy &bull; Metaphysics. Explore your inner world.
+                    Fine-tuned on a currated list of introspective and metaphysical texts.
                   </div>
                   <div style={{
-                    marginTop: 18,
-                    opacity: 0.85
+                    marginTop: 8,
+                    opacity: 0.75,
+                    fontSize: 17
                   }}>
-                    Control how deep it is.
+                    Deep Introspection &bull; Psychology &bull; Philosophy &bull; Metaphysics. Explore your inner world.
                   </div>
-                  <img style={{width: 110, marginTop: 3, marginLeft: -5}} src="slider1.png" />
                 </div>
                 <div style={{
                   display: "flex",
                   flexDirection: "column",
-                  marginTop: 50,
+                  marginTop: 70,
                   position: "relative"
                 }}>
                   <div style={{
@@ -1604,15 +1790,14 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     marginTop: 10,
                     opacity: 0.75
                   }}>
-                    Fun &bull; Creative &bull; Relaxed &bull; Explores Family & Friends. Have casual, fun and interesting conversations.
+                    Fine-tuned on fun and creative datasets.
                   </div>
                   <div style={{
-                    marginTop: 18,
-                    opacity: 0.85
+                    marginTop: 8,
+                    opacity: 0.75
                   }}>
-                    Control how fun it is.
+                    Fun &bull; Creative &bull; Relaxed &bull; Explores Family & Friends. Have casual, fun and interesting conversations.
                   </div>
-                  <img style={{width: 110, marginTop: 3, marginLeft: -5}} src="slider2.png" />
                 </div>
               </div>
               <div style={{
@@ -1642,7 +1827,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   <div style={{
                   width: 15,
                   height: 15,
-                  backgroundColor: "#AD60FF",
+                  backgroundColor: scrollPosition > 980 ? "#AD60FF" : grey,
                   borderRadius: 15
                 }}></div>
                 </div>
@@ -1650,7 +1835,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               <div style={{
                 width: 84,
                 height: 5,
-                background: 'linear-gradient(to right, #AD60FF, #8DE1FF)',
+                background: gradient7Text,
                 position: "absolute",
                 left: -80,
                 top: 20
@@ -1686,7 +1871,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 <div style={{
                 width: 15,
                 height: 15,
-                backgroundColor: "#AD60FF",
+                backgroundColor: scrollPosition > 1250 ? "#AD60FF" : grey,
                 borderRadius: 15
               }}></div>
               </div>
@@ -1698,12 +1883,19 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               marginTop: 15
             }}>
               <div style={{
-                  color: "#8DE1FF",
                   fontSize: 33,
                   maxWidth: 240,
                   textAlign: "left",
               }}>
+                <span
+                style={{
+                  backgroundImage: gradient8Text,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent'
+                }}
+                >
                 Everything You Need
+                </span>
               </div>
               <div style={{
                   color: "white",
@@ -1742,7 +1934,14 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   height: "100%",
                   borderRadius: 15,
                   overflow: "hidden"
-                }}>
+                }}
+                onMouseEnter={() => {
+                  videoCallsOverlay.current.style.opacity = 0
+                }}
+                onMouseLeave={() => {
+                  videoCallsOverlay.current.style.opacity = 1
+                }}
+                >
                   <video
                     style={{
                       width: "100%"
@@ -1753,14 +1952,15 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   >
                     <source src="voice_talk_example.mp4" type="video/mp4" />
                   </video>
-                  <div style={{
+                  <div ref={videoCallsOverlay} style={{
                     position: 'absolute',
                     height: "100%",
                     width: "100%",
                     top: 0,
                     padding: 15,
                     boxSizing: 'border-box',
-                    background: 'linear-gradient(to top left, #291D38 10%, rgba(0, 0, 0, 0) 100%)'
+                    background: 'linear-gradient(to top left, #291D38 10%, rgba(0, 0, 0, 0) 100%)',
+                    transition: 'opacity 0.5s ease-in-out',
                   }}>
                     <div
                       style={{
@@ -1810,7 +2010,14 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   borderRadius: 15,
                   overflow: "hidden",
                   position: 'relative'
-                }}>
+                }}
+                onMouseEnter={() => {
+                  textChatOverlay.current.style.opacity = 0
+                }}
+                onMouseLeave={() => {
+                  textChatOverlay.current.style.opacity = 1
+                }}
+                >
                   <video
                     style={{
                       width: "100%"
@@ -1821,14 +2028,15 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   >
                     <source src="chat_examplee.mp4" type="video/mp4" />
                   </video>
-                  <div style={{
+                  <div ref={textChatOverlay} style={{
                     position: 'absolute',
                     height: "100%",
                     width: "100%",
                     top: 0,
                     padding: 15,
                     boxSizing: 'border-box',
-                    background: 'linear-gradient(to bottom, #1D1C26 0%, rgba(0, 0, 0, 0) 100%)'
+                    background: 'linear-gradient(to bottom, #1D1C26 0%, rgba(0, 0, 0, 0) 100%)',
+                    transition: 'opacity 0.5s ease-in-out',
                   }}>
                     <div
                       style={{
@@ -1962,12 +2170,19 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 marginTop: 15
               }}>
                 <div style={{
-                    color: "#8DE1FF",
                     fontSize: 33,
                     maxWidth: 540,
                     textAlign: "left",
                 }}>
+                  <span
+                  style={{
+                    backgroundImage: gradient9Text,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent'
+                  }}
+                  >
                   Customize Environment
+                  </span>
                 </div>
               </div>
               <div style={{
@@ -1995,7 +2210,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   <div style={{
                   width: 15,
                   height: 15,
-                  backgroundColor: "#AD60FF",
+                  backgroundColor: scrollPosition > 2000 ? "#AD60FF" : grey,
                   borderRadius: 15
                 }}></div>
                 </div>
@@ -2005,7 +2220,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 height: 200,
                 top: 95,
                 width: 5,
-                background: "#A565F8"
+                background: gradient10Down
               }} />
             </div>
             <div style={{
@@ -2031,14 +2246,21 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     justifySelf: "flex-end"
                 }}>
                   <div style={{
-                    color: "#8DE1FF",
                     fontSize: 33,
                     maxWidth: 250,
                     justifySelf: "flex-end",
                     marginTop: 350,
                     transform: `translateY(-${(scrollPosition >= 2330 ? 2330 : scrollPosition) * 0.14}px)`
                   }}>
+                    <span
+                     style={{
+                      backgroundImage: gradient11Text,
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent'
+                    }}
+                    >
                     Tune According To Your Mood
+                    </span>
                   </div>
                   <div style={{
                     color: "white",
@@ -2171,7 +2393,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   backgroundColor: "rgba(255, 255, 255, 0.9)",
                   color: "#000",
                   border: "none",
-                  padding: "0.8rem 1.5rem",
+                  padding: "0.8rem 1.3rem 0.8rem 1.5rem",
                   borderRadius: "2rem",
                   fontSize: "16px",
                   fontWeight: "600",
@@ -2180,7 +2402,6 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   alignItems: "center",
                   transition: "all 0.2s ease",
                   height: 50,
-                  width: 290,
                 }}
                 onMouseOver={(e) => {
                 e.currentTarget.style.transform = "scale(1.05)";
