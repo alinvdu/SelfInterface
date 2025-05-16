@@ -55,7 +55,7 @@ model_configurations = {
         "temperature": 1,
         "top_p": 0.92
     },
-    "Leif": {}
+    "Echo": {}
 }
 
 
@@ -1678,15 +1678,14 @@ async def new_session(user: dict = Depends(enforce_auth)):
                 model_selection = prefs.get("modelSelection")
 
                 if model_selection == "Atlas":
-                    model_version = "ft:gpt-4o-mini-2024-07-18:personal::B3Ti7zzf"
-                elif model_selection == "Leif":
-                    model_version = "gpt-4o-mini"
+                    model_version = "ft:gpt-4o-mini-2024-07-18:personal::BSPWeHlE"
+                elif model_selection == "Echo":
+                    model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
 
         except Exception as e:
             print(f"Error fetching modelSelection from Firestore: {e}")
 
-    if model_selection and model_version:
-        session_states[session_id] = SessionState(model_version=model_version, model_name=model_selection)
+    session_states[session_id] = SessionState(model_version=model_version, model_name=model_selection)
         
     # now fetch any saved environments for this user
     environments = []
@@ -1911,6 +1910,15 @@ async def update_model_selection(request: Request, user: dict = Depends(verify_t
     prefs_ref = db.collection('users').document(user_id) \
                   .collection('preferences').document('app_settings')
     prefs_ref.set({"modelSelection": model_sel}, merge=True)
+    
+    if data['sessionId']:
+        session_state = session_states[data['sessionId']]
+        if model_sel == "Atlas":
+            model_version = "ft:gpt-4o-mini-2024-07-18:personal::BSPWeHlE"
+        elif model_sel == "Echo":
+            model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+        session_state.model_name = model_sel
+        session_state.model_version = model_version
 
     return {"message": f"Model selection updated to '{model_sel}'"}
 
@@ -2189,7 +2197,7 @@ async def process_message(
             model_name = session_state.model_name if session_state else "Atlas"
             model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
             model_params = model_configurations.get(model_name, {})
-
+            print('model ver is: ', model_ver)
             chat_response = await client.chat.completions.create(
                 model=model_ver,
                 messages=history,
