@@ -6,10 +6,9 @@ body,
 }
 
 body {
-  background-image: url('env1.jpg');
   background-size: cover;
-  background-repeat: no-repeat;
-  background-position: 0% 0%;
+  background-repeat: repeat;
+  background-position: 20% 0%;
   background-color: rgb(55, 55, 55);
   /* background-position: 0% 60%; */
 }
@@ -280,4 +279,73 @@ body {
 
 .tipCardExit {
   animation: tipCardExit 0.5s ease forwards;
+}
+
+.bounce {
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(15px);
+  }
+}
+
+.create-account-button {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+.create-account-button.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.create-account-button.hidden {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+.placeholder-white::placeholder {
+  color: white;
+}
+
+.convert-white-hover:hover {
+  background: white;
+  color: black;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+.login-button {
+  background: transparent;
+  color: white;
+  font-size: 17px;
+  padding: 8px 14px;
+  border-radius: 21px;
+  cursor: pointer;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+@media screen and (max-width: 768px) {
+  .login-button {
+    font-size: 15px;
+    padding: 6px 12px;
+  }
+
+}
+
+.login-button:hover {
+  background: white;
+  color: black;
+  transition: background-color 0.4s ease, color 0.4s ease;
 }

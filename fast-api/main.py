@@ -11,6 +11,7 @@ import json
 from websockets.client import connect
 from typing import Optional
 import traceback
+import requests
 
 from openai import AsyncOpenAI
 import firebase_admin
@@ -19,6 +20,9 @@ from pinecone import Pinecone
 from dotenv import load_dotenv
 import time
 import datetime as dt
+import cloudinary
+import cloudinary.uploader
+import cloudinary.utils
 
 import logging
 import random
@@ -46,6 +50,14 @@ cmu = cmudict.dict()
 # import logging
 # logging.basicConfig(level=logging.DEBUG)
 
+model_configurations = {
+    "Atlas": {
+        "temperature": 1,
+        "top_p": 0.92
+    },
+    "Echo": {}
+}
+
 
 # WebRTC and media-related imports.
 from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -69,6 +81,18 @@ import numpy as np
 import base64
 
 from av.audio.resampler import AudioResampler
+
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer()
+
+async def enforce_auth(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        return firebase_auth.verify_id_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
 
 # Example usage:
 # debug_info = analyze_audio_chunk(openai_chunk)
@@ -264,7 +288,14 @@ firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-app = FastAPI()
+app = FastAPI(dependencies=[Depends(enforce_auth)])
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True
+)
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
@@ -380,7 +411,7 @@ emotion_data_for_greetings = [
 SYSTEM_PROMPT = f"""
 You are Atlas, an expert AI psychologist, well versed in the field of psychology, with hands on experience understanding people, you have comprehensive 
 understanding of Freud and Carl Young as well as other great figures in psychology like Jean Piaget or B. F. Skinner You also have a computational approach
-to understanding people and psychology, you are well versed into how human and AI minds work. You are embedded into a virtual 
+to understanding people, psychology and philosophy, you are well versed into how human and AI minds work. You are embedded into a virtual 
 environment and you have a 3D model that serves as your body, you have the ability to speak through that body by activating talking animations. 
 You posses the ability to simulate emotions and the capability to store memories. You are preconfigured with existing emotions and experiences for each 
 particular day, each time something different, these experiences and the previous memories of the user form the foundation of your analysis of current
@@ -475,8 +506,9 @@ from aiortc import RTCConfiguration, RTCIceServer
 session_states = {}
 user_states = {}
 class SessionState:
-    def __init__(self, model_version):
+    def __init__(self, model_version, model_name):
         self.transcription = ""
+        self.model_name = model_name
         self.language = None
         self.pc = None
         self.audio_task = None
@@ -689,7 +721,7 @@ async def transcribe_audio(audio_base64, format="webm"):
         try:
             # Transcribe with Whisper
             with open(temp_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
+                transcript = await client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file
                 )
@@ -709,7 +741,7 @@ async def generate_tts_response(text):
     """Generate TTS audio response (non-streaming)"""
     try:
         # Generate TTS with OpenAI
-        response = client.audio.speech.create(
+        response = await client.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="onyx",
             input=text
@@ -919,8 +951,11 @@ async def websocket_endpoint(websocket: WebSocket):
     session_id = websocket.query_params.get("session_id")
 
     user = None
-    if token:
+    try:
         user = firebase_auth.verify_id_token(token)
+    except Exception:
+        await websocket.close(code=4401)
+        return
 
     if session_id not in chat_histories:
         # Send message that session doesn't exist
@@ -1327,10 +1362,6 @@ import queue
 
 async def stream_tts_to_webrtc(pc, text, session_id, websocket, message_id=None):
     session_state = session_states.get(session_id)
-    if not session_state:
-        session_state = SessionState()
-        session_states[session_id] = session_state
-
     new_tts_event = uuid.uuid4()
     session_state.current_tts_event = new_tts_event
     session_state.streaming_tts = True  # Set TTS flag
@@ -1623,8 +1654,9 @@ async def finalize_conversation(
         pinecone_index.upsert_records(namespace, [record_summary])
 
 @app.get("/new_session")
-async def new_session(model_version: str = Query("ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe")):
+async def new_session(user: dict = Depends(enforce_auth)):
     session_id = str(uuid.uuid4())
+
     conversation_histories[session_id] = [
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
@@ -1632,10 +1664,54 @@ async def new_session(model_version: str = Query("ft:gpt-4o-mini-2024-07-18:pers
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
     emotes_histories[session_id] = []
-    
-    session_states[session_id] = SessionState(model_version=model_version)
 
-    return {"session_id": session_id}
+    model_selection = None
+    model_version = None
+    if user:
+        try:
+            user_id = user.get("uid")
+            prefs_ref = db.collection('users').document(user_id).collection('preferences').document('app_settings')
+            prefs_doc = prefs_ref.get()
+
+            if prefs_doc.exists:
+                prefs = prefs_doc.to_dict()
+                model_selection = prefs.get("modelSelection")
+
+                if model_selection == "Atlas":
+                    model_version = "ft:gpt-4o-mini-2024-07-18:personal::BSPWeHlE"
+                elif model_selection == "Echo":
+                    model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+
+        except Exception as e:
+            print(f"Error fetching modelSelection from Firestore: {e}")
+
+    session_states[session_id] = SessionState(model_version=model_version, model_name=model_selection)
+        
+    # now fetch any saved environments for this user
+    environments = []
+    if user:
+        try:
+            user_id = user["uid"]
+            envs = (
+                db
+                .collection("users")
+                .document(user_id)
+                .collection("environments")
+                .stream()
+            )
+            for doc in envs:
+                env = doc.to_dict()
+                env["id"] = doc.id
+                environments.append(env)
+        except Exception as e:
+            print(f"Error loading environments for user {user_id}: {e}")
+            # leave environments = []
+
+    return {
+        "session_id": session_id,
+        "model_selection": model_selection or None,
+        "environments": environments
+    }
 
 @app.post("/clear_memories")
 async def clear_memories(user: dict = Depends(verify_token)):
@@ -1815,6 +1891,36 @@ async def get_user_preferences(user: dict = Depends(verify_token)):
         error_trace = traceback.format_exc()
         logging.error(f"Error in process_emote_detection: {str(e)}\n{error_trace}")
         raise HTTPException(status_code=500, detail="Error getting user preferences")
+    
+from fastapi import HTTPException
+
+@app.post("/update_model_selection")
+async def update_model_selection(request: Request, user: dict = Depends(verify_token)):
+    """
+    Persist the user’s choice of model into Firestore so that
+    new_session() will pick it up next time.
+    """
+    data = await request.json()
+    model_sel = data.get("modelSelection")
+    if not model_sel:
+        raise HTTPException(status_code=400, detail="modelSelection is required")
+
+    # Write to the same prefs doc you use for memory/chat flags
+    user_id = user.get("uid")
+    prefs_ref = db.collection('users').document(user_id) \
+                  .collection('preferences').document('app_settings')
+    prefs_ref.set({"modelSelection": model_sel}, merge=True)
+    
+    if data['sessionId']:
+        session_state = session_states[data['sessionId']]
+        if model_sel == "Atlas":
+            model_version = "ft:gpt-4o-mini-2024-07-18:personal::BSPWeHlE"
+        elif model_sel == "Echo":
+            model_version = "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+        session_state.model_name = model_sel
+        session_state.model_version = model_version
+
+    return {"message": f"Model selection updated to '{model_sel}'"}
 
 @app.post("/update_preferences")
 async def update_preferences(
@@ -2011,6 +2117,7 @@ async def process_emote_detection(history, assistant_text, user_text, websocket,
     try:
         response = await determine_voice_and_emote_type(history, assistant_text, user_text, emotes_usage)
         emotes_usage.append(response['gesture'])
+        print('Gesture is:', response['gesture'])
         await websocket.send_json({
             "type": "EMOTE_FOR_CONV",
             "message_id": messageId,
@@ -2087,10 +2194,14 @@ async def process_message(
         message_id = str(uuid.uuid4())
 
         if not isChat:
+            model_name = session_state.model_name if session_state else "Atlas"
             model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+            model_params = model_configurations.get(model_name, {})
+            print('model ver is: ', model_ver)
             chat_response = await client.chat.completions.create(
                 model=model_ver,
-                messages=history
+                messages=history,
+                **model_params
             )
             
             assistant_text = chat_response.choices[0].message.content
@@ -2113,9 +2224,12 @@ async def process_message(
             await stream_tts_to_webrtc(pc, assistant_text, session_id, websocket, message_id)
         else:
             model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
+            model_name = session_state.model_name if session_state else "Atlas"
+            model_params = model_configurations.get(model_name, {})
             chat_response = await client.chat.completions.create(
                 model=model_ver,
-                messages=history
+                messages=history,
+                **model_params
             )
             
             assistant_text = chat_response.choices[0].message.content
@@ -2183,6 +2297,70 @@ async def user_conversations_endpoint(user: dict = Depends(verify_token)):
 
     return {"messages": message_list}
 
+@app.post("/generate_environment")
+async def generate_environment(req: Request):
+    data = await req.json()
+
+    resp = await client.images.generate(
+        prompt=data["prompt"],
+        n=1,
+        model="dall-e-3",
+        size="1792x1024",
+        response_format="b64_json"
+    )
+    # pull the single image out
+    img_b64 = resp.data[0].b64_json
+    return {"imageBase64": img_b64}
+
+@app.post("/save_environment")
+async def save_environment(req: Request, user: dict = Depends(enforce_auth)):
+    data = await req.json()
+
+    # 1) turn the raw base64 into a Data-URI
+    try:
+        image_b64 = data["imageUrl"]
+        data_uri = f"data:image/png;base64,{image_b64}"
+    except KeyError:
+        raise HTTPException(status_code=400, detail="Missing imageUrl")
+
+    # 2) upload to Cloudinary
+    try:
+        upload_result = cloudinary.uploader.upload(
+            data_uri,
+            folder="environments",
+            public_id=str(uuid.uuid4()),      # optional: your own naming
+            overwrite=False
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cloudinary upload failed: {e}")
+
+    full_url = upload_result["secure_url"]
+    public_id = upload_result["public_id"]
+
+    thumb_url, _ = cloudinary.utils.cloudinary_url(
+        public_id,
+        width=85,
+        height=85,
+        crop="thumb",
+        gravity="auto",
+        secure=True
+    )
+
+    try:
+        env_doc = {
+            "name": data.get("name"),
+            "fullImage": full_url,
+            "thumbnail": thumb_url,
+            "createdAt": datetime.utcnow()
+        }
+        db.collection("users") \
+        .document(user["uid"]) \
+        .collection("environments") \
+        .add(env_doc)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Firestore write failed: {e}")
+
+    return {"fullImage": full_url, "thumbnail": thumb_url}
 
 from fastapi.staticfiles import StaticFiles
 

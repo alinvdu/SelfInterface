@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-const LoadingDots = ({ color = 'white', size = 16 }) => {
+const LoadingDots = ({ color = 'white', size = 16, extraStyles }) => {
   const [dotStates, setDotStates] = useState([0, 0, 0]);
   
   useEffect(() => {
@@ -23,6 +23,7 @@ const LoadingDots = ({ color = 'white', size = 16 }) => {
     width: '100%',
     height: '100%',
     borderRadius: '8px',
+    ...extraStyles
   };
   
   // Dots container style

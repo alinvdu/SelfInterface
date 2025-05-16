@@ -95,8 +95,8 @@ const CollapsibleMemoriesPanel = ({ isMobile, token, requiresAccount, openedByDe
         style={{
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
-          background: 'rgba(0, 0, 0, 0.25)',
-          border: "1px solid rgba(255, 255, 255, 0.35)",
+          background: 'rgba(0, 0, 0, 0.45)',
+          border: "1px solid rgba(255, 255, 255, 0.45)",
           borderRadius: "16px",
           padding: isExpanded ? "21px" :  isMobile ? "8px 6px" : "12px 8px",
           width: "100%",

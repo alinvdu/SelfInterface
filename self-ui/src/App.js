@@ -7,6 +7,10 @@ import { IoCloseCircleOutline } from "react-icons/io5";
 
 import { motion, AnimatePresence } from "framer-motion"; // You'll need to install framer-motion
 import { RxAvatar } from "react-icons/rx";
+import { FaCheck } from "react-icons/fa6";
+import { PiShirtFoldedDuotone } from "react-icons/pi";
+
+import env1Url from "./env1.jpg"
 
 // React Three Fiber imports
 import { Canvas } from "@react-three/fiber";
@@ -34,25 +38,14 @@ import Overlay from "./components/Overlay.js";
 import { BsArrowRight } from "react-icons/bs";
 import PrivacyPolicy from "./PrivacyPolicy.js";
 import SaveDialog from "./components/SaveDialog.js";
+import { IoIosLogOut } from "react-icons/io";
+import { IoIosCloseCircleOutline } from "react-icons/io";
+import MyPanelWithWaves from "./components/WavyPanel.js";
+import EnvironmentModal from "./components/EnvironmentModal.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
-const api = "https://selfai.live";
-
-const AVAILABLE_MODELS = [
-  {
-    id: "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe",
-    name: "Atlas",
-    description: "Calm, empathetic and attentive. Great for a psychologist."
-  },
-  {
-    id: "ft:gpt-4o-mini-2024-07-18:personal::BQi6EyD8",
-    name: "Unfiltered Atlas",
-    description: "Raw experience, deeply philosophical and emotional. Great for deep conversations."
-  }
-];
-
-const DEFAULT_MODEL = AVAILABLE_MODELS[0];
+const api = "http://localhost:8000";
 
 function ModelLoader() {
   return (
@@ -162,6 +155,7 @@ function App() {
 
   // Audio context and oscillator refs
   const audioContextRef = useRef(null);
+  const apiSelectedModel = useRef(null);
 
   const peerConnectionRef = useRef(null);
   const wsRef = useRef(null);
@@ -390,11 +384,6 @@ function App() {
   };
 
   const { token, user, loading, signInWithGoogle, logout } = useAuth()
-  // const { token, user, loading } = {
-  //   token: null,
-  //   user: null,
-  //   loading: false
-  // }
   const [isTalking, setIsTalking] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [memories, setMemories] = useState([]);
@@ -411,8 +400,10 @@ function App() {
   const [currentMicroExpression, setCurrentMicroExpression] = useState(null);
   const [currentGesture, setCurrentGesture] = useState(null);
 
+  const [showModelSelectionScreen, setShowModelSelectionScreen] = useState(false);
+
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-  const isMobile = windowWidth < 786;
+  const isMobile = windowWidth < 768;
   const isSmallSize = windowWidth < 1200;
   const smallerThan850 = windowWidth < 850;
   const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
@@ -438,10 +429,19 @@ function App() {
 
   const modelDropdownRef = useRef(null);
   const [isModelVisible, setIsModelVisible] = useState(true);
+  const [areEnvsLoaded, setAreEnvsLoaded] = useState(false);
+  const [environments, setEnvironments] = useState([{
+    name: "Cabinet"
+  }]);
 
-  const [showIntroMode, setShowIntroMode] = useState(true);
+  const INTRO_MODE = "INTRO_MODE"
+  const APP_MODE = "APP_MODE"
+  const [mode, setMode] = useState(null);
+  const showIntroMode = mode === INTRO_MODE
   const [showLoginView, setShowLoginView] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showEnvironmentModal, setShowEnvironmentModal] = useState(false);
 
   const [showTipCard, setShowTipCard] = useState(false);
   const progressIntervalRef = useRef(null);
@@ -456,11 +456,48 @@ function App() {
 
   const fullEmoteRef = useRef(null)
   const microEmoteRef = useRef(null)
+  const sessionIdRef = useRef(null)
+
+  const [isUpdatingModel, setIsUpdatingModel] = useState(false);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
+
+  const updateModel = async (model) => {
+    setIsUpdatingModel(true);
+    try {
+      const res = await fetch(`${api}/update_model_selection`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ modelSelection: model, sessionId: sessionIdRef.current })
+      });
+
+      if (!res.ok) throw new Error("Failed to update model");
+      
+      setSelectedModel(model);
+      setShowModelSelectionScreen(false);
+
+      if (!apiSelectedModel.current) {
+        apiSelectedModel.current = model;
+        createAndConnectWs(sessionId, token);
+      } else {
+        apiSelectedModel.current = model;
+      }
+    } catch (err) {
+      console.error("Error updating model:", err);
+    } finally {
+      setIsUpdatingModel(false);
+    }
+  };
 
   useEffect(() => {
     const isFirefoxBrowser = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
     setIsFirefox(isFirefoxBrowser);
-  }, []);
+  }, []);;
 
   useEffect(() => {
     if (!showIntroMode && !token && !conversing && !tipShownRef.current && !loading) {
@@ -504,13 +541,7 @@ function App() {
   const [showPrivacyPolicyDialog, setShowPrivacyPolicyDialog] = useState(false);
 
   const handleStartApp = () => {
-    setIsModelVisible(false)
-    setTimeout(() => {
-      setShowIntroMode(false);
-    }, 50)
-    setTimeout(() => {
-      setIsModelVisible(true)
-    }, 200);
+    setMode(APP_MODE)
   };
 
   useEffect(() => {
@@ -518,17 +549,18 @@ function App() {
   }, [assistantTalking])
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(() => {
-    const savedModel = localStorage.getItem("selectedModel");
-    if (savedModel) {
-      try {
-        return JSON.parse(savedModel);
-      } catch (e) {
-        return DEFAULT_MODEL;
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [selectedEnv, setSelectedEnv] = useState(null);
+
+  useEffect(() => {
+    if (selectedEnv) {
+      if (selectedEnv.name === 'Cabinet') {
+        document.body.style.backgroundImage = `url('${env1Url}')`;
+      } else {
+        document.body.style.backgroundImage = `url('${selectedEnv.url}')`
       }
     }
-    return DEFAULT_MODEL;
-  });
+  }, [selectedEnv]);
 
     // Add this with your other useEffect hooks
   useEffect(() => {
@@ -594,14 +626,29 @@ function App() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isCallDropdownVisible]);
-  
-  const handleModelSelect = (model) => {
-    setSelectedModel(model);
-    localStorage.setItem("selectedModel", JSON.stringify(model));
-    setIsModelDropdownOpen(false);
 
-    window.location.reload();
-  };
+  useEffect(() => {
+    if (areEnvsLoaded) {
+      const savedEnv = window.localStorage.getItem('selectedEnvironment');
+      if (savedEnv && environments.find(env => env.name === savedEnv)) {
+        const env = environments.find(env => env.name === savedEnv)
+        setSelectedEnv({
+          name: env.name,
+          url: env.fullImage
+        })
+      } else {
+        setSelectedEnv({
+          name: "Cabinet"
+        })
+      }
+    }
+  }, [environments, areEnvsLoaded])
+
+  useEffect(() => {
+    if (selectedEnv) {
+      window.localStorage.setItem('selectedEnvironment', selectedEnv.name);
+    }
+  }, [selectedEnv])
 
   const prevUserMessageRef = useRef(null);
   const prevAssistantMessageRef = useRef(null);
@@ -962,16 +1009,12 @@ function App() {
 
   // Combined new_session and proactive message call.
   useEffect(() => {
-    if (!loading) {
-      if (token) {
-        setShowIntroMode(false);
-      }
-
+    if (!loading && token) {
       const createSession = async () => {
         if (!sessionId) {
           try {
             // Start the new session API call
-          const newSessionPromise = fetch(api + `/new_session?model_version=${encodeURIComponent(selectedModel.id)}`, {
+          const newSessionPromise = fetch(api + `/new_session`, {
             headers: { Authorization: `Bearer ${token}` },
           }).then(res => res.json());
 
@@ -986,6 +1029,20 @@ function App() {
             // Set sessionId and create WebSocket connection
             setSessionId(newSessionData.session_id);
 
+            if (newSessionData.environments && newSessionData.environments.length) {
+              setEnvironments([...environments, ...newSessionData.environments])
+              setAreEnvsLoaded(true)
+            }
+
+            if (!newSessionData.model_selection) {
+              setShowModelSelectionScreen(true);
+              setSelectedModel("Atlas")
+              return;
+            } else {
+              apiSelectedModel.current = newSessionData.model_selection
+              setSelectedModel(newSessionData.model_selection)
+            }
+
             await new Promise(resolve => setTimeout(resolve, 100));
 
             createAndConnectWs(newSessionData.session_id, token);
@@ -997,6 +1054,12 @@ function App() {
       createSession();
     }
   }, [loading, token]);
+
+  useEffect(() => {
+    if (!loading) {
+      setMode(!token ? INTRO_MODE : APP_MODE)
+    }
+  }, [loading]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1175,12 +1238,17 @@ function App() {
             cursor: 'pointer',
             padding: isMobile ? 6 : 12,
             position: 'relative',
-            transition: "transform 0.3s ease" // Animation for hover
+            transition: "transform 0.3s ease"
           }}
           onClick={(e) => {
             if (!isFirefox) {
               e.stopPropagation();
-              setIsCallDropdownVisible(true);
+              setIsCallDropdownVisible(false);
+              toggleExpandChat(false);
+              setPhoneCalling(true);
+              initiateWebRTC(false);
+              clearInterval(progressIntervalRef.current);
+              setShowTipCard(false);
             }
           }}
           onMouseEnter={(e) => {
@@ -1249,100 +1317,6 @@ function App() {
                   borderTop: '8px solid rgba(0, 0, 0, 0.85)',
                 }}
               />
-            </div>
-          )}
-
-          {/* Call Options Dropdown */}
-          {isCallDropdownVisible && (
-            <div 
-              ref={callDropdownRef}
-              className="callOptionsDropdown"
-              onClick={(e) => e.stopPropagation()} // Prevent clicks from reaching document
-              style={{
-                position: 'absolute',
-                bottom: '100%',
-                marginBottom: '12px',
-                width: '280px',
-                background: isMobile ? 'rgba(83, 83, 83, 0.85)' : 'rgba(0, 0, 0, 0.25)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                border: '1px solid rgba(255, 255, 255, 0.4)',
-                borderRadius: '16px',
-                padding: '12px',
-                zIndex: 10,
-                animation: 'fadeInUp 0.3s ease-out forwards', // Animation
-                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
-              }}
-            >
-              {/* Audio Call Option */}
-              <div 
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  marginBottom: '8px',
-                  cursor: 'pointer',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent triggering parent onClick
-                  setIsCallDropdownVisible(false);
-                  toggleExpandChat(false);
-                  setPhoneCalling(true);
-                  initiateWebRTC(false); // Audio call
-                  clearInterval(progressIntervalRef.current);
-                  setShowTipCard(false);
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                }}
-              >
-                <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '16px' }}>Audio Call</div>
-                <div style={{ fontSize: '14px', opacity: 0.85 }}>Real time voice sentiment emotion recognition</div>
-              </div>
-              
-              {/* Video Call Option */}
-              <div 
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent triggering parent onClick
-                  setIsCallDropdownVisible(false);
-                  toggleExpandChat(false);
-                  setPhoneCalling(true);
-                  initiateWebRTC(true); // Video call
-                  setShowVideo(true);
-                  clearInterval(progressIntervalRef.current);
-                  setShowTipCard(false);
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                }}
-              >
-                <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '16px' }}>Video Call</div>
-                <div style={{ fontSize: '14px', opacity: 0.85 }}>Real time video and voice sentiment emotion recognition</div>
-              </div>
             </div>
           )}
         </div>
@@ -1497,6 +1471,462 @@ function App() {
     </div>
   );
 
+  if (loading) {
+    return (
+      <div
+        className="App"
+        style={{
+          position: "relative",
+          background: "transparent",
+          height: "100%",
+          width: "100%",
+          background: "black"
+        }}
+      />
+    )
+  }
+
+  const renderMenu = () => {
+    return (
+      <div style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
+        left: 0,
+        bottom: 0,
+        background: 'rgba(20, 20, 20, 0.25)',
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+        zIndex: 99999,
+      }}>
+      <div style={{
+        position: "absolute",
+        top: isMobile ? 10 : 15,
+        width: isMobile ? 350 : 400,
+        right: isMobile ? 10 : 25,
+        boxSizing: "border-box",
+        bottom: isMobile ? 10 : 15,
+        borderRadius: 15,
+        background: 'rgba(0, 0, 0, 1)',
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        border: "1px solid rgba(255, 255, 255, 0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-start",
+        boxSizing: "border-box",
+        flexDirection: "column",
+      }}>
+        <div style={{
+          width: "100%"
+        }}>
+        <div style={{
+          position: "absolute",
+          top: 1,
+          right: 1,
+          width: 200,
+          height: 45,
+          background: "#393939",
+          fontSize: 17,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderBottom: "1px solid #1a1a1a",
+          borderTopRightRadius: 13,
+          clipPath: "polygon(20% 0, 100% 0, 100% 100%, 0 100%)",
+          color: "white",
+          fontWeight: "bold"
+        }}>
+          <div style={{position: "absolute", right: 150, top: 0, width: 70, height: 45, clipPath: "polygon(55% 0%, 100% 0%, 60% 100%, 0% 100%)", background: "#1a1a1a"}} />
+          <span>Settings</span>
+        </div>
+        </div>
+        <div className="convert-white-hover" style={{
+          position: "absolute",
+          top: 5,
+          left: 5,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "6px 12px",
+          borderRadius: 15,
+          cursor: "pointer"
+        }} onClick={() => {
+          setShowMenu(false);
+        }}>
+          <span style={{
+            fontSize: 16
+          }}>Close</span>
+          <IoIosCloseCircleOutline style={{
+            fontSize: 25,
+            marginLeft: 8
+          }} />
+        </div>
+        <div style={{
+          marginTop: 70,
+          width: "100%",
+          overflowY: "auto",
+        }}>
+          <div style={{
+            marginRight: 15,
+            fontSize: 25
+          }}>
+            <span style={{
+              fontWeight: "bold"
+            }}>Hello</span> {user.displayName || user.email}
+          </div>
+          <div style={{
+            width: "100%",
+            flex: 1,
+            padding: 25,
+            paddingTop: 50,
+            boxSizing: 'border-box'
+          }}>
+            <div style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "flex-start",
+              flexDirection: "column",
+              height: "100%",
+              overflowY: "auto"
+            }}>
+              <div style={{
+                fontSize: 18
+              }}>Psychologist</div>
+              <div style={{
+                width: "100%",
+                height: 1,
+                marginTop: 8,
+                borderBottom: "1px dotted rgba(255, 255, 255, 0.75)"
+              }} />
+              <div style={{
+                width: "100%",
+                display: "flex",
+                flexDirection: "row",
+                paddingTop: 8,
+                marginBottom: 25,
+                boxSizing: "border-box"
+              }}>
+                <img src={selectedModel === "Atlas" ? "philosophical-icon.png" : "fun-icon.png"} style={{
+                  width: selectedModel === "Atlas" ? 55 : 40,
+                  marginRight: selectedModel === "Atlas" ? 0 : 8,
+                  marginTop: selectedModel === "Atlas" ? 0 : 8,
+                  alignSelf: 'flex-start'
+                }} />
+                <div style={{
+                  marginLeft: 8,
+                  marginTop: 5,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  justifyContent: "flex-start"
+                }}>
+                  <div style={{
+                    fontWeight: "bold"
+                  }}>{selectedModel}</div>
+                  <div style={{
+                    fontSize: 14,
+                    textAlign: "left",
+                    marginTop: 5
+                  }}>
+                  {selectedModel === "Atlas" ? "Best for exploring your inner self, the connection with the universe and consciousness." : "Best for relaxed, supportive chats focused on relationships and self-reflection."}
+                  </div>
+                  <div style={{width: "100%", display: "flex"}}>
+                    <div style={{
+                      marginTop: 8,
+                      width: 80,
+                      height: 28  ,
+                      background: 'white',
+                      borderRadius: 5,
+                      color: "black",
+                      display: "flex",
+                      fontSize: 14,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      cursor: "pointer",
+                      transition: "transform 0.3s ease"
+                    }} onMouseOver={(e) => {
+                      e.currentTarget.style.transform = "scale(1.05)";
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.transform = "scale(1)";
+                    }} onClick={() => {
+                      setShowMenu(false);
+                      setShowModelSelectionScreen(true);
+                    }}>
+                      <span>Change</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "flex-start",
+              flexDirection: "column"
+            }}>
+              <div style={{
+                fontSize: 18
+              }}>Environment</div>
+              <div style={{
+                width: "100%",
+                height: 1,
+                marginTop: 8,
+                borderBottom: "1px dotted rgba(255, 255, 255, 0.75)"
+              }} />
+              <div style={{
+                display: "flex",
+                marginBottom: 15,
+                paddingBottom: 10,
+                width: "100%",
+                paddingTop: 15,
+                alignItems: "center",
+                boxSizing: "border-box",
+                justifyContent: "flex-start",
+                width: "100%",
+                overflowX: "auto"
+              }}>
+                {environments.map(env => {
+                  const isSelected = env.name === selectedEnv.name
+                  return (
+                  <div style={{
+                    display: "flex",
+                    minHeight: 0,
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    justifyContent: "flex-start",
+                    borderRadius: 8,
+                    position: "relative",
+                    cursor: "pointer",
+                    border: `1px solid ${isSelected ? "#AD60FF" : 'rgba(255, 255, 255, 0.55)'}`,
+                    padding: 5,
+                    paddingBottom: 8,
+                    boxSizing: "border-box",
+                    marginRight: 10
+                  }} onClick={() => {
+                    setSelectedEnv({
+                      name: env.name,
+                      url: env.fullImage
+                    })
+                  }}>
+                    <div style={{
+                      width: 85,
+                      height: 85,
+                      borderRadius: 5,
+                      backgroundImage: `url(${env.name === "Cabinet" ? "default-env-cabinet.jpg" : env.thumbnail})`,
+                      backgroundSize: "cover",
+                    }} />
+                    <div style={{ width: "100%", height: 2, marginTop: 3, borderBottom: '1px dotted rgba(255, 255, 255, 0.5)'}} />
+                    {isSelected ? <div style={{
+                      position: "absolute",
+                      bottom: -8,
+                      right: -5,
+                      borderRadius: 2,
+                      width: 18,
+                      height: 18,
+                      background: "#AD60FF",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}><FaCheck style={{
+                      fontSize: 13,
+                    }} /></div> : null}
+                    <div style={{
+                      fontSize: 15,
+                      marginTop: 4,
+                      maxWidth: 85,
+                      fontSize: 13,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap"
+                    }} title={env.name}>
+                      {env.name}
+                    </div>
+                  </div>)}
+                )}
+                <div style={{
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                <div onClick={() => {
+                  setShowMenu(false);
+                  setShowEnvironmentModal(true)
+                }} onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 1)"
+                  e.currentTarget.style.color = "black"
+                }} onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#393939"
+                  e.currentTarget.style.color = "rgba(255, 255, 255, 0.45)"
+                }} style={{width: 42, cursor: "pointer", height: 42, background: "#393939", borderRadius: 8, marginLeft: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, color: "rgba(255, 255, 255, 0.45)"}}>
+                  <span style={{
+                    marginTop: -3
+                  }}>
+                    +
+                  </span>
+                </div>
+                </div>
+              </div>
+            </div>
+            <div style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "flex-start",
+              flexDirection: "column"
+            }}>
+              <div style={{
+                fontSize: 18
+              }}>Clothes</div>
+              <div style={{
+                width: "100%",
+                height: 1,
+                marginTop: 8,
+                borderBottom: "1px dotted rgba(255, 255, 255, 0.75)"
+              }} />
+              <div style={{
+                marginBottom: 30,
+                width: "100%",
+                paddingTop: 10,
+                display: "flex"
+              }}>
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  padding: 6,
+                  boxSizing: "border-box",
+                  border: '1px solid #AD60FF',
+                  borderRadius: 5,
+                  position: "relative"
+                }}>
+                  <img src="shirt.png" style={{
+                    width: 28
+                  }} />
+                  <div style={{
+                    marginTop: 5,
+                    fontSize: 13
+                  }}>
+                    Formal
+                  </div>
+                  <div style={{
+                      position: "absolute",
+                      bottom: -8,
+                      right: -5,
+                      borderRadius: 2,
+                      width: 15,
+                      height: 15,
+                      background: "#AD60FF",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}><FaCheck style={{
+                      fontSize: 10,
+                    }} /></div>
+                </div>
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  flexGrow: 1,
+                  alignItems: "flex-start",
+                  justifyContent: "center",
+                  marginLeft: 18,
+                  fontSize: 14
+                }}>
+                  <div>
+                    More To Come...
+                  </div>
+                  <div style={{
+                    fontSize: 13,
+                    opacity: 0.85
+                  }}>
+                    Stay tuned.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "flex-start",
+              flexDirection: "column"
+            }}>
+              <div style={{
+                fontSize: 18
+              }}>Data Persistence</div>
+              <div style={{
+                width: "100%",
+                height: 1,
+                marginTop: 8,
+                borderBottom: "1px dotted rgba(255, 255, 255, 0.75)"
+              }} />
+              <div style={{
+                width: "100%",
+                paddingTop: 15
+              }}>
+                <div style={{
+                  display: "flex"
+                }}>
+                  <Switch 
+                    isChecked={isChatEnabled}
+                    onChange={value => handleChatToggle(value, token)}
+                    isDisabled={isTogglingChat}
+                    isLoading={loadingPreferences}
+                  />
+                  <div style={{
+                    fontSize: 14,
+                    marginLeft: 8
+                  }}>Chat Persistence</div>
+                </div>
+                <div style={{
+                  display: "flex",
+                  marginTop: 15
+                }}>
+                  <Switch
+                    isChecked={isMemoryEnabled}
+                    onChange={(value) => handleMemoryToggle(value, token)}
+                    isDisabled={isTogglingMemory}
+                    isLoading={loadingPreferences}
+                  />
+                  <div style={{
+                    fontSize: 14,
+                    marginLeft: 8
+                  }}>Memory Persistence</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="convert-white-hover" style={{
+            position: "absolute",
+            right: 12,
+            bottom: 10,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "6px 12px",
+            borderRadius: 15,
+            cursor: "pointer"
+          }}
+          onClick={logout}
+          >
+          <IoIosLogOut style={{
+            fontSize: 24,
+            marginRight: 5
+          }} />
+          <span style={{
+            fontSize: 16
+          }}>Log Out</span>
+          </div>
+        </div>
+      </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="App"
@@ -1506,27 +1936,25 @@ function App() {
         height: "100%",
       }}
     >
-      {(
-        <AnimatePresence>
-          {showIntroMode && <Overlay isMobile={isMobile} smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
-            setShowCreateAccount(false)
-            setShowLoginView(true)
-          }} toggleCreateAccountView={() => {
-            setShowLoginView(false)
-            setShowCreateAccount(true)
-          }} navigateBack={() => {
-            setShowCreateAccount(false);
-            setShowLoginView(false);
-          }}
-          setShowPrivacyPolicyDialog={setShowPrivacyPolicyDialog}/>}
-        </AnimatePresence>
-      )}
-      <div style={{
+        {showIntroMode && <Overlay isMobile={isMobile} smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
+          setShowCreateAccount(false)
+          setShowLoginView(true)
+        }} toggleCreateAccountView={() => {
+          setShowLoginView(false)
+          setShowCreateAccount(true)
+        }} navigateBack={() => {
+          setShowCreateAccount(false);
+          setShowLoginView(false);
+        }}
+        setShowPrivacyPolicyDialog={setShowPrivacyPolicyDialog}
+        windowWidth={windowWidth}/>}
+        {showMenu && renderMenu()}
+      {!showIntroMode && <div style={{
         position: "fixed",
         top: 0,
         right: 0,
-        width: showIntroMode ? isSmallSize ? "0%" : "45%" : "100%",
-        height: "100%",
+        width: "100%",
+        height: "100%"
       }}>
           <div style={{
             position: "relative",
@@ -1547,95 +1975,7 @@ function App() {
             />
           {shouldShowModelLoader() && <ModelLoader />}
         </div>
-      </div>
-      {showIntroMode && !showLoginView && !showCreateAccount ? !token ? <div style={{
-        position: "absolute",
-        top: isMobile ? 20 : smallerThan850 ? 28 : 35,
-        right: smallerThan850 ? 15 : 50,
-        fontSize: isMobile ? 16 : 19,
-        color: 'rgba(255, 255, 255, 1)',
-        opacity: 0.85,
-        cursor: 'pointer'
-      }}
-      onMouseOver={e => {
-        e.currentTarget.style.opacity = 1
-        e.currentTarget.style.transform = "scale(1.05)";
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.opacity = 0.85
-        e.currentTarget.style.transform = "scale(1)";
-      }}
-      onClick={() => {
-        setShowLoginView(true)
-      }}
-      >
-        Log In
-      </div> : <div style={{
-        position: "absolute",
-        top: smallerThan850 ? 22 : 35,
-        right: 50,
-        fontSize: isMobile ? 16 : 19,
-        color: 'rgba(255, 255, 255, 1)',
-        opacity: 0.85,
-        cursor: 'pointer',
-        display: "flex"
-      }}
-      >
-        {!smallerThan850 && 
-        <><div style={{
-          marginRight: 15
-        }}>
-          Hello {user.displayName || user.email}
-        </div>
-        <div style={{
-          marginRight: 15
-        }}>
-          |
-        </div></>}
-        <div style={{
-          
-        }}
-        onMouseOver={e => {
-          e.currentTarget.style.opacity = 1
-          e.currentTarget.style.transform = "scale(1.05)";
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.opacity = 0.85
-          e.currentTarget.style.transform = "scale(1)";
-        }}
-        onClick={logout}
-        >
-        Log Out
-        </div>
-        <div style={{
-          marginLeft: 25,
-          display: "flex",
-          alignItems: "center"
-        }}
-        onMouseOver={e => {
-          e.currentTarget.style.opacity = 1
-          e.currentTarget.style.transform = "scale(1.05)";
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.opacity = 0.85
-          e.currentTarget.style.transform = "scale(1)";
-        }}
-        onClick={() => {
-          setIsModelVisible(false)
-          setTimeout(() => {
-            setShowIntroMode(false);
-          }, 50)
-          setTimeout(() => {
-            setIsModelVisible(true)
-            }, 200);
-        }}
-        >
-          <span>Back</span>
-          <BsArrowRight style={{
-            marginLeft: 5
-          }} />
-        </div>
-      </div> : null}
+      </div>}
       {showSaveDialog && (
         <SaveDialog
           onSave={handleSaveConversation} 
@@ -1652,10 +1992,10 @@ function App() {
             top: isMobile ? 10 : "16px",
             left: "16px",
             zIndex: 2,
-            background: 'rgba(0, 0, 0, 0.25)',
+            background: 'rgba(0, 0, 0, 0.45)',
             backdropFilter: "blur(8px)",
             WebkitBackdropFilter: "blur(8px)",
-            border: "1px solid rgba(255, 255, 255, 0.35)",
+            border: "1px solid rgba(255, 255, 255, 0.45)",
             borderRadius: "21px",
             color: "white",
             fontSize: isMobile ? 19 : "23px",
@@ -1663,8 +2003,13 @@ function App() {
             height: isMobile ? 45 : 60,
             display: "flex",
             alignItems: "center",
-            justifyContent: "center"
-          }}>
+            justifyContent: "center",
+            cursor: "pointer"
+          }}
+          onClick={() => {
+            window.location.href = '/';
+          }}
+          >
             <GiBrain style={{
               fontSize: isMobile ? 28 : 38,
               color: "white",
@@ -1674,7 +2019,7 @@ function App() {
               <div>Self AI</div>
             </div>
         </div>
-        <div
+        {selectedModel && <div
           ref={modelDropdownRef}
           style={{
             position: "absolute",
@@ -1682,10 +2027,10 @@ function App() {
             left: "50%",
             transform: !isMobile ? "translate(-50%, -35%)" : "translateX(-50%)",
             zIndex: 2,
-            background: 'rgba(0, 0, 0, 0.25)',
+            background: 'rgba(0, 0, 0, 0.45)',
             backdropFilter: "blur(8px)",
             WebkitBackdropFilter: "blur(8px)",
-            border: "1px solid rgba(255, 255, 255, 0.35)",
+            border: "1px solid rgba(255, 255, 255, 0.55)",
             borderRadius: "26px",
             padding: isModelDropdownOpen ? "0.8rem" : isMobile ? "3px 16px" : "0.5rem 1.2rem",
             color: "white",
@@ -1699,14 +2044,13 @@ function App() {
             flexDirection: isModelDropdownOpen ? "column" : "row",
             overflow: "hidden",
             maxHeight: isMobile && isModelDropdownOpen ? "calc(100vh - 200px)" : "none",
-            width: isMobile && isModelDropdownOpen ? "80%" : "auto",
             zIndex: 99
           }}
           onClick={() => !isModelDropdownOpen && setIsModelDropdownOpen(true)}
         >
           {!isModelDropdownOpen ? (
             <>
-              {selectedModel.name}
+              {selectedModel}
               <svg 
                 xmlns="http://www.w3.org/2000/svg" 
                 width="16" 
@@ -1734,7 +2078,7 @@ function App() {
                 marginBottom: "10px",
                 alignItems: "center"
               }}>
-                <div style={{ fontSize: "1rem", fontWeight: "bold" }}>Model Selection</div>
+                <div style={{ fontSize: "1.2rem", flex: 1 }}>{selectedModel}</div>
                 <div 
                   style={{ 
                     cursor: "pointer", 
@@ -1758,86 +2102,46 @@ function App() {
                   ×
                 </div>
               </div>
-              <div style={{ maxHeight: "190px", overflowY: "auto", width: "100%" }}>
-                {AVAILABLE_MODELS.map((model) => (
-                  <div
-                    key={model.id}
-                    style={{
-                      padding: "8px 10px",
-                      margin: "3px 0",
-                      borderRadius: "10px",
-                      background: selectedModel.id === model.id ? "rgba(255, 255, 255, 0.95)" : "rgba(0, 0, 0, 0.2)",
-                      border: selectedModel.id === model.id 
-                        ? "1px solid rgba(255, 255, 255, 0.95)" 
-                        : "1px solid rgba(255, 255, 255, 0.3)",
-                      color: selectedModel.id === model.id ? "rgba(0, 0, 0, 0.8)" : "white",
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                      display: "flex",
-                      flexDirection: "column",
-                      position: "relative",
-                      alignItems: "flex-start",
-                      boxShadow: selectedModel.id === model.id ? "0 2px 8px rgba(0, 0, 0, 0.1)" : "none",
-                      marginBottom: 8
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleModelSelect(model);
-                    }}
-                    onMouseOver={(e) => {
-                      if (selectedModel.id !== model.id) {
-                        e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.5)";
-                        e.currentTarget.style.background = "rgba(0, 0, 0, 0.3)";
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (selectedModel.id !== model.id) {
-                        e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)";
-                        e.currentTarget.style.background = "rgba(0, 0, 0, 0.2)";
-                      }
-                    }}
-                  >
-                    <div style={{ 
-                      fontWeight: "500", 
-                      display: "flex", 
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      width: "100%",
-                      fontSize: 16
-                    }}>
-                      {model.name}
-                      {selectedModel.id === model.id && (
-                        <svg 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          width="16" 
-                          height="16" 
-                          viewBox="0 0 24 24" 
-                          fill="none" 
-                          stroke="currentColor" 
-                          strokeWidth="2" 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round"
-                          style={{ color: "rgba(0, 0, 0, 0.7)" }}
-                        >
-                          <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                      )}
-                    </div>
-                    <div style={{ 
-                      fontSize: "0.9rem", 
-                      opacity: selectedModel.id === model.id ? 0.8 : 0.9,
-                      maxWidth: 300,
-                      paddingRight: 15,
-                      textAlign: "left"
-                    }}>
-                      {model.description}
-                    </div>
-                  </div>
-                ))}
+              <div style={{ maxHeight: "190px", maxWidth: 280, width: isMobile ? 250 : "100%", overflowY: "auto", fontSize: 15 }}>
+                {selectedModel === "Atlas" ? <div style={{
+                  borderTop: '1px solid grey',
+                  borderBottom: '1px solid grey',
+                  paddingBottom: 8,
+                  paddingTop: 8,
+                  fontSize: 14
+                }}>
+                  Best for exploring your inner self, the connection with the universe and consciousness.
+                </div> : <div style={{
+                  borderTop: '1px solid grey',
+                  borderBottom: '1px solid grey',
+                  paddingBottom: 8,
+                  paddingTop: 8,
+                  fontSize: 14
+                }}>
+                  Best for relaxed, supportive chats focused on relationships and self-reflection.
+                </div>}
+                <div style={{width: "100%", display: "flex", alignItems: "center", justifyContent: "center"}}>
+                <div style={{
+                  width: 95,
+                  height: 33,
+                  borderRadius: 8,
+                  color: "black",
+                  fontSize: 14,
+                  background: "rgba(255, 255, 255, 0.85)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginTop: 8
+                }} onClick={() => {
+                  setShowModelSelectionScreen(true);
+                }}>
+                  <span>Change</span>
+                </div>
+                </div>
               </div>
             </>
           )}
-        </div>
+        </div>}
 
         {!loading &&
         <div
@@ -1846,7 +2150,7 @@ function App() {
             top: isMobile ? 10 : token ? "16px" : "22px",
             right: "16px",
             zIndex: 2,
-            background: token ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)',
+            background: token ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.85)',
             backdropFilter: "blur(15px)",
             WebkitBackdropFilter: "blur(15px)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
@@ -1868,23 +2172,19 @@ function App() {
             e.currentTarget.style.transform = "scale(1)";
           }}
           onClick={() => {
-            setIsModelVisible(false)
-            setTimeout(() => {
-              setShowIntroMode(true);
-            }, 50)
-            setTimeout(() => {
-              setIsModelVisible(true)
-            }, 200);
-
-            if (!token) {
-              setShowCreateAccount(true);
-            }
+            setShowMenu(true);
           }}
         >
-          {token && <RxAvatar style={{
+          {token && 
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          }}><RxAvatar style={{
             fontSize: isMobile ? 20 : 30,
-            color: "white"
-          }} />}
+            color: "white",
+            marginRight: 8
+          }} /><span>Settings</span></div>}
           {!token ? <div style={{ color: "black", fontSize: isMobile ? 14 : 15, fontWeight: "bold"}}>Create Account</div> : null}
         </div>}
 
@@ -2276,8 +2576,8 @@ function App() {
                 zIndex: 2,
                 backdropFilter: "blur(8px)",
                 WebkitBackdropFilter: "blur(8px)",
-                background: 'rgba(0, 0, 0, 0.25)',
-                border: "1px solid rgba(255, 255, 255, 0.4)",
+                background: 'rgba(0, 0, 0, 0.55)',
+                border: "1px solid rgba(255, 255, 255, 0.65)",
                 borderRadius: "46px",
                 color: "white",
                 textAlign: "center",
@@ -2411,6 +2711,18 @@ function App() {
               }} />
             </div>
           </div>}
+          {showModelSelectionScreen && <MyPanelWithWaves
+            apiSelectedModel={apiSelectedModel.current}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
+            updateModel={updateModel}
+            isUpdatingModel={isUpdatingModel}
+            setShowModelSelectionScreen={setShowModelSelectionScreen}
+            windowWidth={windowWidth}
+            isMobile={isMobile}
+          />}
+          {showEnvironmentModal &&
+          <EnvironmentModal isMobile={isMobile} api={api} token={token} setShowEnvironmentModal={setShowEnvironmentModal} setSelectedEnv={setSelectedEnv} setEnvironments={setEnvironments} environments={environments} />}
       </div>
   );
 }
