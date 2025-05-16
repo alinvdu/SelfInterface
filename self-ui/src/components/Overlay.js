@@ -11,8 +11,9 @@ import { IoIosShirt } from "react-icons/io";
 import { FaTwitter } from "react-icons/fa";
 import { FaDiscord } from "react-icons/fa";
 import { FaYoutube } from "react-icons/fa";
+import { BsGear } from "react-icons/bs";
 
-const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView, setShowPrivacyPolicyDialog, isMobile }) => {
+const Overlay = memo(({ windowWidth, showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView, setShowPrivacyPolicyDialog, isMobile }) => {
   const { signInWithEmail, register, resetPassword } = useAuth();
   
   // Form states
@@ -310,6 +311,9 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
     ${animatedBorderInactiveColor} 100%
   )`;
 
+  const titleFontSize = isMobile ? 25 : windowWidth < 1020 ? 28 : windowWidth < 1250 ? 30 : 32
+  const firstParallaxStop = windowWidth < 1020 ? 250 : 380
+
   return (
     <div
       initial={{ opacity: 0 }}
@@ -335,7 +339,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         overflow: "hidden"
       }}
     >
-      {!showLoginView && !showCreateAccount && <div style={{
+      {!showLoginView && !showCreateAccount && !isMobile && <div style={{
         position: "absolute",
         top: 100,
         left: "50%",
@@ -343,7 +347,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         zIndex: 99999
       }}>
         <div style={{
-          fontSize: 21
+          fontSize: windowWidth < 1020 ? 18 : 21
         }}>
           Scroll To Discover <b>Self AI</b>
         </div>
@@ -362,7 +366,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           position: "absolute",
           left: 0,
           top: 0,
-          width: '50%',
+          width: isMobile ? "100%" : "50%",
           transform: `translateY(-${scrollPosition * 1}px)`
       }}>
         <div style={{
@@ -370,11 +374,18 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           display: "flex", 
           justifyContent: "flex-end",
           alignItems: 'flex-end',
-          flexDirection: "column"
+          flexDirection: "column",
+          width: isMobile ? "100%" : "auto",
+        }}>
+        <div style={{
+          position: "relative",
+          display: "flex",
+          width: isMobile ? "100%" : "auto",
+          justifyContent: isMobile ? "center" : "none",
         }}>
         <video
         style={{
-          width: 720,
+          width: isMobile ? 350 : 720,
           zIndex: 99,
           opacity: showCreateAccount || showLoginView ? 0.7 : 1
         }}
@@ -382,10 +393,23 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           loop
           muted
         >
-          <source src="floating-psychological-self-flipped.mp4" type="video/mp4" />
+          <source src="floating-psychological-self.mp4" type="video/mp4" />
           Your browser does not support the video tag.
         </video>
         <div style={{
+          display: windowWidth < 1435 ? "block" : "none",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 999,
+          background: `linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.7) 80%)`
+        }}>
+
+        </div>
+        </div>
+        {!isMobile && <div style={{
           width: 5,
           height: 245,
           position: "absolute",
@@ -393,8 +417,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           top: 1093,
           left: "50%",
           zIndex: 999
-        }} />
-        <svg
+        }} />}
+        {!isMobile && <svg
           viewBox="0 0 380 710"
           style={{
             position: 'absolute',
@@ -427,17 +451,18 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-        </svg>
-        <div style={{
+        </svg>}
+       {!isMobile && <div style={{
             position: "absolute",
             top: 1200,
-            fontSize: 33,
+            fontSize: titleFontSize,
             maxWidth: 340,
             textAlign: "left",
             zIndex: 9991,
             left: "50%",
             transform: "translateX(-50%)",
-            background: "black"
+            background: "black",
+            marginLeft: windowWidth < 800 ? 114 : windowWidth < 1020 ? 100 : windowWidth < 1140 ? 50 : 0,
         }}>
           <span
             style={{
@@ -448,19 +473,20 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           >
           Explore Your Inner Core
           </span>
-        </div>
+        </div>}
         <video
         style={{
-          width: 650,
-          marginTop: -30,
+          width: isMobile ? 400 : windowWidth < 1140 ? 500 : 650,
+          marginTop: isMobile ? 210 : windowWidth < 1140 ? 100 : -30,
           zIndex: 98,
-          marginRight: 30
+          marginRight: isMobile ? 0 : 30,
+          alignSelf: isMobile ? "center" : "auto",
         }}
           autoPlay={true}
           loop
           muted
         >
-          <source src="sphere-layers.mp4" type="video/mp4" />
+          <source src="sphere-layers_compressed_resized.mp4" type="video/mp4" />
           Your browser does not support the video tag.
         </video>
         </div>
@@ -474,7 +500,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           left: "0",
           width: "100%",
           height: "100%",
-          zIndex: 98
+          zIndex: 98,
+          opacity: windowWidth < 1140 ? 0.4 : 1
         }}
       />
       <div ref={scrollRef} style={{
@@ -491,9 +518,9 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         alignItems: "flex-start",
         flexDirection: "column",
         position: "fixed",
-        paddingTop: 15,
-        paddingLeft: 25,
-        paddingRight: 25,
+        paddingTop: isMobile ? 8 : 15,
+        paddingLeft: isMobile ? 10 : 25,
+        paddingRight: isMobile ? 10 : 25,
         boxSizing: "border-box",
         left: 0,
         zIndex: 99999,
@@ -532,7 +559,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
             }} />
             <div style={{ 
               color: "white", 
-              fontSize: isMobile ? 19 : "23px",
+              fontSize: isMobile ? 18 : "23px",
               margin: 0
             }}>
               Self AI
@@ -583,7 +610,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
             display: "flex",
             alignItems: "center"
           }}>
-            {
+            {!showCreateAccount && !showLoginView &&
               <button 
                   className={`create-account-button ${showCreateAccountButton ? 'visible' : 'hidden'}`}
                   style={{
@@ -599,8 +626,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   alignItems: "center",
                   transition: "all 0.2s ease",
                   height: 38,
-                  width: 180,
-                  fontSize: 16,
+                  width: isMobile ? 86 : 180,
+                  fontSize: isMobile ? 13 : 16,
                   marginRight: 15,
                   }}
                   onMouseOver={(e) => {
@@ -613,15 +640,10 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   }}
                   onClick={toggleCreateAccountView}
               >
-                  Create Account <BsArrowRight style={{ marginLeft: "0.5rem", fontSize: "1.2rem" }} />
+                  {isMobile ? "Sign Up" : "Create Account"} {!isMobile && <BsArrowRight style={{ marginLeft: "0.5rem", fontSize: "1.2rem" }} />}
               </button>
             }
-            <div style={{ 
-              color: "white", 
-              fontSize: isMobile ? 19 : "19px",
-              margin: 0,
-              cursor: "pointer"
-            }}
+            <div className="login-button"
             onClick={() => {
               toggleLoginView(true)
             }}
@@ -637,7 +659,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
         justifyContent: "center",
         flexDirection: "row",
         width: "100%",
-        minHeight: "100%"
+        minHeight: "100%",
+        overflow: "hidden"
       }}>
       {showCreateAccount ? (
         // Create Account View - Now using RegisterForm component
@@ -648,10 +671,12 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           justifyContent: "center",
           height: "100%",
           width: "100%",
-          margin: "0 auto"
+          margin: "0 auto",
+          padding: 15,
+          boxSizing: "border-box",
         }}>
           {/* Keep TypingText component */}
-          <div style={{right: 0, marginTop: 60, marginBottom: 40}}>
+          <div style={{right: 0, marginTop: 40, marginBottom: 30, height: 50}}>
             <TypingText fontSize={smallerThan850 ? 25 : 35} texts={[
               "Psychology, unlocked!",
               "Powerful and expressive!",
@@ -950,10 +975,12 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           justifyContent: "center",
           height: "100%",
           width: "100%",
-          margin: "0 auto"
+          margin: "0 auto",
+          padding: 15,
+          boxSizing: "border-box",
         }}>
           {/* Keep TypingText component */}
-          <div style={{right: 0, marginTop: 60, marginBottom: 40}}>
+          <div style={{right: 0, marginTop: 40, marginBottom: 30, height: 50}}>
             <TypingText fontSize={smallerThan850 ? 25 : 35} texts={[
               "Psychology, unlocked!",
               "Powerful and expressive!",
@@ -1339,18 +1366,18 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           minHeight: 0,
           width: '100%'
         }}>
-            <div style={{display: "flex", minHeight: 0, width: "62%", flexDirection: "row", alignItems: "flex-start", justifyContent: "flex-start"}}>
+            <div style={{display: "flex", minHeight: 0, width: "100%", flexDirection: "row", alignItems: "flex-start", justifyContent: "flex-start"}}>
             <div style={{
               zIndex: 100,
               position: "absolute",
-              top: 330,
-              width: "50%",
+              top: isMobile ? 380 : 330,
+              width: isMobile ? "100%" : "50%",
               right: 0,
               display: 'flex',
               flexDirection: "column",
-              alignItems: "flex-start"
+              alignItems: isMobile ? "center" : "flex-start"
             }}>
-              <div style={{
+              {!isMobile && <div style={{
                 position: 'absolute',
                 display: "flex",
                 alignItems: "center",
@@ -1381,8 +1408,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   borderRadius: 15
                 }}></div>
                 </div>
-              </div>
-              <svg
+              </div>}
+              {!isMobile && <svg
                 viewBox="0 0 66 78"
                 style={{
                   position: 'absolute',
@@ -1412,8 +1439,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   fill="none"
                   strokeLinecap="round"
                 />
-              </svg>
-              <svg
+              </svg>}
+              {!isMobile && <svg
                 viewBox="0 0 42 60"
                 style={{
                   position: 'absolute',
@@ -1443,44 +1470,28 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   fill="none"
                   strokeLinecap="round"
                 />
-              </svg>
-              <svg
-                viewBox="0 0 130 60"
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: -26,
-                  width: '130px',
-                  height: '60px',
-                  pointerEvents: 'none'
-                }}
-              >
-                <defs>
-                  <linearGradient
-                    id="gradientStroke"
-                    gradientUnits="userSpaceOnUse"
-                    x1="0" y1="30"
-                    x2="130" y2="30"
-                  >
-                    <stop offset="0%" stopColor="#AD60FF" />
-                    <stop offset="100%" stopColor="#8DE1FF" />
-                  </linearGradient>
-                </defs>
-
-                <path
-                  d="M 0 30 L 130 30"
-                  stroke="url(#gradientStroke)"
-                  strokeWidth="4"
-                  fill="none"
-                />
-              </svg>
+              </svg>}
+              {!isMobile && <div style={{
+                width: windowWidth < 1020 ? 60 : 130,
+                height: 4,
+                pointerevents: 'none',
+                top: 27,
+                left: -26,
+                position: "absolute",
+                background: 'linear-gradient(to right, #AD60FF, #8DE1FF)',
+              }} />}
               <div style={{
-                marginLeft: 100
+                marginLeft: isMobile ? 0 : windowWidth < 1020 ? 30 : 100,
+                padding: isMobile ? 20 : 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: isMobile ? "center" : "flex-start",
               }}>
-              <div style={{right: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", flexDirection: "column", maxWidth: 400, textAlign: "left"}}>
+              <div style={{right: 0, display: "flex", justifyContent: "center", alignItems: isMobile ? "center" : "flex-start", flexDirection: "column", maxWidth: isMobile ? "100%" : windowWidth < 1020 ? 250 : windowWidth < 1250 ? 320 : 400, textAlign: "left"}}>
                   <div style={{
-                    fontSize: 45,
-                    textAlign: "left",
+                    fontSize: windowWidth < 1020 ? 29 : windowWidth < 1250 ? 32 : 45,
+                    textAlign: isMobile ? "center" : "left",
+                    lineHeight: "52px",
                     position: "relative"
                   }}>
                     <span style={{
@@ -1488,45 +1499,68 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       WebkitBackgroundClip: 'text',
                       WebkitTextFillColor: 'transparent'
                     }}>Expand Your Self</span>
-                    <svg
-                      viewBox="0 0 120 250"
+                    {!isMobile && <svg
+                      viewBox={`0 0 ${windowWidth < 1020 ? 80 : 120} 250`}
                       style={{
                         position: 'absolute',
                         top: 20,
-                        right: -112,
-                        width: 120,
+                        right: windowWidth < 1020 ? -75 : -112,
+                        width: windowWidth < 1020 ? 80 : 120,
                         height: 250,
-                        pointerEvents: 'none'
+                        pointerEvents: 'none',
                       }}
                     >
                       <defs>
                         <linearGradient
                           id="curveGrad2"
                           gradientUnits="userSpaceOnUse"
-                          x1="0" y1="0"   /* gradient start at top-right */
-                          x2="120"  y2="250"  /* gradient end at bottom-left */
+                          x1="0"
+                          y1="0"
+                          x2={windowWidth < 1020 ? 80 : 120}
+                          y2="250"
                         >
                           <stop offset="0%" stopColor="#8DE1FF" />
-                          <stop offset={`${fillPctGradient2 > 0 ? fillPctGradient2 == 100 ? fillPctGradient2 : Math.max(fillPctGradient2 - SMOOTH_PCT/2, 0) : fillPctGradient2}%`} stopColor={"#A36DF7"} />
-                          <stop offset={`${fillPctGradient2 > 0 ? Math.min(+fillPctGradient2 + SMOOTH_PCT/2, 100) : fillPctGradient2}%`} stopColor="#5B585B" />
+                          <stop
+                            offset={`${
+                              fillPctGradient2 > 0
+                                ? fillPctGradient2 === 100
+                                  ? fillPctGradient2
+                                  : Math.max(fillPctGradient2 - SMOOTH_PCT / 2, 0)
+                                : fillPctGradient2
+                            }%`}
+                            stopColor="#A36DF7"
+                          />
+                          <stop
+                            offset={`${
+                              fillPctGradient2 > 0
+                                ? Math.min(+fillPctGradient2 + SMOOTH_PCT / 2, 100)
+                                : fillPctGradient2
+                            }%`}
+                            stopColor="#5B585B"
+                          />
                         </linearGradient>
                       </defs>
 
                       <path
-                        d="M0 10 H80 A48 48 0 0 1 115 50 L110 250"
+                        d={
+                          windowWidth < 1020
+                            ? 'M0 10 H40 C70 10, 76 30, 76 50 L76 250'
+                            : "M0 10 H80 A48 48 0 0 1 115 50 L110 250"
+                        }
                         stroke="url(#curveGrad2)"
                         strokeWidth="4"
                         fill="none"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
-                    </svg>
+                    </svg>}
                   </div>
                   <div style={{
-                    fontSize: 18,
+                    fontSize: windowWidth < 1020 ? 16 : 18,
                     color: "white",
                     opacity: 0.7,
-                    marginTop: 5
+                    marginTop: 5,
+                    textAlign: isMobile ? "center" : "left",
                   }}>
                     Interact with the most advanced AI platform build from the ground up for the soul.
                   </div>
@@ -1537,16 +1571,16 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   backgroundColor: "rgba(255, 255, 255, 0.9)",
                   color: "#000",
                   border: "none",
-                  padding: "0.8rem 1rem 0.8rem 1.5rem",
+                  padding: isMobile ? "5px 12px" : "0.8rem 1rem 0.8rem 1.5rem",
                   borderRadius: "2rem",
-                  fontSize: "16px",
+                  fontSize: isMobile ? 14 : "16px",
                   fontWeight: "600",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   transition: "all 0.2s ease",
-                  height: 50,
-                  width: 190,
+                  height: isMobile ? 40 : 50,
+                  width: isMobile ? 155 : 190,
                   }}
                   onMouseOver={(e) => {
                   e.currentTarget.style.transform = "scale(1.05)";
@@ -1567,21 +1601,26 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 justifyContent: "flex-start",
                 alignItems: "center",
                 flexDirection: "column",
-                marginTop: 600,
+                marginTop: isMobile ? 670 : 600,
                 marginLeft: 0,
                 position: "relative",
                 width: "100%"
             }}>
               <div style={{
-                marginTop: 600,
+                marginTop: isMobile ? 0 : windowWidth < 1020 ? 400 : 550,
                 fontSize: 30,
                 marginLeft: 0,
-                transform: `translateY(-${(scrollPosition > 500 ? 500 : scrollPosition) * 0.8}px)`,
+                transform: !isMobile ? `translateY(-${(scrollPosition > firstParallaxStop ? firstParallaxStop : scrollPosition) * 0.8}px)` : "none",
                 display: "flex",
                 flexDirection: "column",
-                width: "100%",
+                marginRight: isMobile ? 0 : windowWidth < 1020 ? 450 : windowWidth < 1650 ? 510 : 610,
+                right: isMobile ? "none" : "5%",
+                alignSelf: isMobile ? "center" : "flex-end",
                 alignItems: "flex-start",
-                position: "relative"
+                position: "relative",
+                height: 300,
+                padding: isMobile ? 20 : 0,
+                maxWidth: isMobile ? "100%" : windowWidth < 780 ? 280 : windowWidth < 1020 ? 300 : "none"
               }}>
                 <div
                   style={{
@@ -1591,15 +1630,18 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   }}
                 >
                   <div style={{
-                    fontSize: 33,
-                    position: "relative"
+                    fontSize: titleFontSize,
+                    position: "relative",
+                    display: "flex",
+                    justifyContent: isMobile ? "center" : "flex-start",
                   }}>
                     <span style={{
                       backgroundImage: gradient2Text,
                       WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent'
+                      WebkitTextFillColor: 'transparent',
+                      textAlign: isMobile ? "center" : "right",
                     }}>Full Emotional Awareness</span>
-                    <div style={{
+                    {!isMobile && <div style={{
                       position: 'absolute',
                       display: "flex",
                       alignItems: "center",
@@ -1630,23 +1672,23 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                         borderRadius: 15
                       }}></div>
                       </div>
-                    </div>
-                    <div style={{
+                    </div>}
+                    {!isMobile && <div style={{
                       width: 50,
                       height: 5,
                       backgroundColor: scrollPosition > 300 ? purple : '#4A4747',
                       position: "absolute",
                       right: -100,
                       top: 18
-                    }}/>
+                    }}/>}
                   </div>
                   <div style={{
-                      fontSize: 18,
+                      fontSize: isMobile ? 16 : 18,
                       color: "white",
                       opacity: 0.7,
                       marginTop: 5,
-                      maxWidth: 360,
-                      textAlign: "right"
+                      maxWidth: isMobile ? "100%" : 360,
+                      textAlign: isMobile ? "center" : "right"
                   }}>
                     Atlas can pick-up emotions from your voice, use micro-expressions and gestures when suitable. So you feel like it’s real!
                   </div>
@@ -1654,26 +1696,30 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     marginTop: 12,
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "flex-end"
+                    justifyContent: isMobile ? "center" : "flex-end"
                   }}>
                     <img style={{
-                      width: 50
+                      width: windowWidth < 1160 ? 40 : 50,
+                      border: windowWidth < 1160 ? "1px solid rgba(255, 255, 255, 0.25)" : "none",
+                      padding: 3,
+                      borderRadius: 5,
+                      background: windowWidth < 1160 ? "black" : "none",
                     }} src="micro-expressions-icon.png" />
                     <RotatingText />
                   </div>
                 </div>
               </div>
-              <div style={{
+              {!isMobile && <div style={{
                 backgroundColor: "black",
                 borderRadius: 25,
                 overflow: "hidden",
                 position: "absolute",
                 background: animatedBorderGradient,
                 padding: 5,
-                height: 600,
+                height: windowWidth < 1020 ? 500 : 600,
                 backgroundClip: 'padding-box, border-box',
                 top: 0,
-                right: "10%",
+                right: isMobile ? 0 : "5%",
                 overflow: "hidden",
               }}>
                 <div style={{
@@ -1682,7 +1728,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   height: "100%",
                 }}>
                   <img style={{
-                    width: 500,
+                    width: windowWidth < 1020 ? 350 : windowWidth < 1650 ? 400 : 500,
                     borderRadius: 25,
                     filter: "grayscale(100%)",
                     background: "black",
@@ -1693,22 +1739,28 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     e.target.style.filter = "grayscale(100%)"
                   }} src="atlas-smile-purple-filter.png" />
                 </div>
-              </div>
+              </div>}
               <div
                 style={{
-                  marginTop: 1100,
+                  marginTop: isMobile ? 350 : 550,
+                  width: isMobile ? "100%": "auto",
+                  padding: isMobile ? 20 : 0,
+                  boxSizing: "border-box",
                   alignSelf: "flex-start",
-                  transform: `translateY(-${(scrollPosition > 1250 ? 1250 : scrollPosition) * 0.8}px)`,
-                  marginLeft: "25%"
+                  transform: !isMobile ? `translateY(-${(scrollPosition > 1250 ? 1250 : scrollPosition) * 0.4}px)` : 'none',
+                  position: "relative",
+                  left: isMobile ? "auto" : "50%",
+                  marginLeft: isMobile ? 0 : windowWidth < 1140 ? 30 : 60
                 }}
               >
               <div style={{
                 position: "relative"
               }}>
               <div style={{
-                  fontSize: 33,
+                  fontSize: titleFontSize,
+                  lineHeight: "40px",
                   maxWidth: 640,
-                  textAlign: "left"
+                  textAlign: isMobile ? "center" : "left"
               }}>
                 <span style={{
                     backgroundImage: gradient6Text,
@@ -1721,7 +1773,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               <div style={{
                   display: "flex",
                   marginTop: 5,
-                  maxWidth: 550,
+                  maxWidth: isMobile ? "100%" : windowWidth < 1020 ? 320 : windowWidth < 1060 ? 400 : windowWidth < 1232 ? 450 : 550,
+                  height: 400,
                   textAlign: "left",
                   alignItems: "flex-start",
                   justifyContent: "flex-start",
@@ -1730,82 +1783,109 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 <div style={{
                   display: "flex",
                   flexDirection: "column",
-                  marginTop: 25
+                  marginTop: 5,
+                  alignItems: isMobile ? "center" : "flex-start",
                 }}>
                   <div style={{
-                    marginTop: 15,
-                    opacity: 0.75,
-                    fontSize: 17
-                  }}>
-                    Both start from a psychology-oriented conversational base.
-                  </div>
-                  <div style={{
                     fontSize: 23,
-                    maxWidth: 100,
+                    maxWidth: 180,
                     zIndex: 99,
-                    marginTop: 35
+                    marginTop: isMobile ? 15 : windowWidth < 1140 ? 25 : 35
                   }}>
                     Atlas
                   </div>
                   <img src="philosophical-icon.png" style={{
-                    position: "absolute",
-                    left: -85,
-                    top: 140,
-                    width: 75
+                    position: isMobile ? "relative" : "absolute",
+                    left: isMobile ? 0 : windowWidth < 1140 ? -60 : -85,
+                    top: isMobile ? 0 : windowWidth < 1140 ? 80 : 90,
+                    width: windowWidth < 1140 ? 55 : 75
                   }} />
                   <div style={{
                     marginTop: 15,
                     opacity: 0.75,
-                    fontSize: 17
+                    fontSize: 17,
+                    textAlign: isMobile ? "center" : "left"
                   }}>
-                    Fine-tuned on a currated list of introspective and metaphysical texts.
+                    Built on a curated collection of introspective and metaphysical texts, Atlas brings depth to patient-therapist-style conversations. Ideal for exploring your true Self.                  </div>
+                  <div style={{
+                    marginTop: 25,
+                    fontSize: 16,
+                    opacity: 0.85,
+                    fontWeight: "bold",
+                    display: "flex"
+                  }}>
+                    <BsGear
+                      style={{
+                        fontSize: 18,
+                        marginRight: 5
+                      }}
+                    />
+                    <span>Skills</span>
                   </div>
                   <div style={{
-                    marginTop: 8,
+                    marginTop: 5,
                     opacity: 0.75,
-                    fontSize: 17
+                    fontSize: 17,
+                    textAlign: isMobile ? "center" : "left"
                   }}>
-                    Deep Introspection &bull; Psychology &bull; Philosophy &bull; Metaphysics. Explore your inner world.
+                    Deep Introspection &bull; Psychology &bull; Philosophy &bull; Metaphysics.
                   </div>
                 </div>
                 <div style={{
                   display: "flex",
                   flexDirection: "column",
-                  marginTop: 70,
-                  position: "relative"
+                  marginTop: isMobile ? 45 : 55,
+                  position: "relative",
+                  alignItems: isMobile ? "center" : "flex-start",
                 }}>
                   <div style={{
                     fontSize: 22,
-                    maxWidth: 80
+                    maxWidth: 150
                   }}>
-                    Leif
+                    Echo
                   </div>
                   <img src="fun-icon.png" style={{
-                    position: "absolute",
-                    left: -72,
+                    position: isMobile ? "relative" : "absolute",
+                    left: isMobile ? 0 : windowWidth < 1140 ? -56 : -72,
                     top: 10,
-                    width: 55
+                    width: windowWidth < 1140 ? 41 : 55
                   }} />
                   <div style={{
-                    marginTop: 10,
-                    opacity: 0.75
+                    marginTop: isMobile ? 20 : 10,
+                    opacity: 0.75,
+                    textAlign: isMobile ? "center" : "left",
                   }}>
-                    Fine-tuned on fun and creative datasets.
+                    Inspired by real patient-therapist conversations, Echo excels at listening and offering gentle support. Great for light chats and self-exploration.                  </div>
+                  <div style={{
+                    marginTop: 25,
+                    fontSize: 16,
+                    opacity: 0.85,
+                    fontWeight: "bold",
+                    display: "flex"
+                  }}>
+                    <BsGear
+                      style={{
+                        fontSize: 18,
+                        marginRight: 5
+                      }}
+                    />
+                    <span>Skills</span>
                   </div>
                   <div style={{
-                    marginTop: 8,
-                    opacity: 0.75
+                    marginTop: 5,
+                    opacity: 0.75,
+                    textAlign: isMobile ? "center" : "left",
                   }}>
-                    Fun &bull; Creative &bull; Relaxed &bull; Explores Family & Friends. Have casual, fun and interesting conversations.
+                    Easy Conversations &bull; Great Listener &bull; Relaxed &bull; Psychology.
                   </div>
                 </div>
               </div>
-              <div style={{
+              {!isMobile && <div style={{
                 position: 'absolute',
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                left: -120,
+                left: windowWidth < 1140 ? -90 : -120,
                 top: 4,
                 width: 38,
                 height: 38,
@@ -1831,26 +1911,29 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   borderRadius: 15
                 }}></div>
                 </div>
-              </div>
-              <div style={{
-                width: 84,
+              </div>}
+              {!isMobile && <div style={{
+                width: windowWidth < 1140 ? 74 : 84,
                 height: 5,
                 background: gradient7Text,
                 position: "absolute",
-                left: -80,
+                left: windowWidth < 1140 ? -70 : -80,
                 top: 20
-              }} />
+              }} />}
               </div>
               </div>
           </div>
           </div>
-          <div style={{ marginTop: -880, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-            <div style={{
+          <div style={{
+            transform: !isMobile ? `translateY(-${(scrollPosition > 1170 ? 1170 : scrollPosition) * 0.4}px)` : 'none',
+            width: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column",
+            marginTop: isMobile ? 270 : windowWidth < 1020 ? 118 : 0}}>
+            {!isMobile && <div style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               marginLeft: -79,
-              marginTop: -18,
+              marginTop: 50,
               width: 38,
               height: 38,
               borderRadius: 38,
@@ -1875,7 +1958,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 borderRadius: 15
               }}></div>
               </div>
-            </div>
+            </div>}
             <div style={{
               display: "flex",
               alignItems: "flex-start",
@@ -1883,7 +1966,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               marginTop: 15
             }}>
               <div style={{
-                  fontSize: 33,
+                  fontSize: titleFontSize,
                   maxWidth: 240,
                   textAlign: "left",
               }}>
@@ -1911,22 +1994,26 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
           <div style={{
             width: "100%",
             position: "relative",
-            height: 1780,
-            overflow: "hidden"
+            height: isMobile ? 2900 : windowWidth < 1140 ? 1780 : 1880
           }}>
-          <div style={{width: "100%", display: "flex", position: "absolute", top: 470, alignItems: "center", justifyContent: "center", flexDirection: "column"}}>
+          <div style={{
+            transform: !isMobile ? `translateY(-${(scrollPosition > 1170 ? 1170 : scrollPosition) * 0.4}px)` : "none",
+            width: "100%", display: "flex", position: isMobile ? "relative" : "absolute", top: isMobile ? 0 : 470, alignItems: "center", justifyContent: "center", flexDirection: "column"}}>
             <div style={{
               marginTop: 45,
-              display: "flex"
+              display: "flex",
+              flexDirection: isMobile ? "column" : "row",
             }}>
               <div style={{
-                width: 400,
-                height: 550,
+                width: isMobile ? 350 : windowWidth < 1020 ? 280 : windowWidth < 1140 ? 320 : 400,
+                height: windowWidth < 1140 ? 440 : 550,
                 borderRadius: 15,
                 padding: 3,
+                boxSizing: "border-box",
                 background: "linear-gradient(to bottom, rgba(255, 255, 255, 0.15) 0%, #6236BA 100%)",
-                transform: `translateY(-${(scrollPosition >= 1600 ? 1600 : scrollPosition) * 0.3}px)`,
-                overflow: 'hidden'
+                transform: !isMobile ? `translateY(-${(scrollPosition >= 1600 ? 1600 : scrollPosition) * 0.3}px)` : "none",
+                overflow: 'hidden',
+                position: "relative"
               }}>
                 <div style={{
                   background: "black",
@@ -1950,7 +2037,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     muted
                     loop
                   >
-                    <source src="voice_talk_example.mp4" type="video/mp4" />
+                    <source src="voice_talk_example_trimmed_compressed_resized.mp4" type="video/mp4" />
                   </video>
                   <div ref={videoCallsOverlay} style={{
                     position: 'absolute',
@@ -1980,7 +2067,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                         fontWeight: 600,
                         textAlign: "right"
                       }}>
-                        Video Calls
+                        Video Calls & Transcriptions
                       </div>
                       <div style={{
                         textAlign: "right",
@@ -1994,14 +2081,15 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 </div>
               </div>
               <div style={{
-                width: 350,
-                height: 344,
+                width: isMobile ? 350 : windowWidth < 1020 ? 220 : windowWidth < 1140 ? 300 : 350,
+                height: isMobile ? 344 : windowWidth < 1020 ? 216 : windowWidth < 1140 ? 295 : 344,
                 borderRadius: 15,
                 padding: 3,
-                marginLeft: 10,
-                marginTop: 540,
+                marginLeft: isMobile ? 0 : 10,
+                marginTop: isMobile ? 25 : 540,
+                boxSizing: "border-box",
                 background: "linear-gradient(to bottom, rgba(255, 255, 255, 0.15) 0%, #6236BA 100%)",
-                transform: `translateY(-${(scrollPosition >= 1700 ? 1700 : scrollPosition) * 0.6}px)`
+                transform: !isMobile ? `translateY(-${(scrollPosition >= 1700 ? 1700 : scrollPosition) * 0.6}px)` : "none"
               }}>
                 <div style={{
                   background: "black",
@@ -2040,7 +2128,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   }}>
                     <div
                       style={{
-                        fontSize: 22,
+                        fontSize: windowWidth < 1140 ? 19 : 22,
                         fontWeight: 600,
                         textAlign: "left"
                       }}
@@ -2053,15 +2141,16 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               <div style={{
                 display: "flex",
                 flexDirection: "column",
-                marginTop: 700,
-                transform: `translateY(-${(scrollPosition >= 1810 ? 1810 : scrollPosition) * 0.65}px)`
+                marginTop: isMobile ? 25 : 700,
+                transform: !isMobile ? `translateY(-${(scrollPosition >= 1810 ? 1810 : scrollPosition) * 0.65}px)` : "none"
               }}>
                 <div style={{
-                  width: 290,
-                  height: 232,
+                  width: isMobile ? 350 : windowWidth < 1020 ? 200 : windowWidth < 1140 ? 250 : 290,
+                  height: windowWidth < 1140 ? 208 : 232,
                   borderRadius: 15,
                   padding: 3,
-                  marginLeft: 10,
+                  boxSizing: 'border-box',
+                  marginLeft: isMobile ? 0 : 10,
                   background: "linear-gradient(to bottom, rgba(255, 255, 255, 0.25) 0%, #6236BA 100%)",
                   position: "relative"
                 }}>
@@ -2071,25 +2160,27 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     height: "100%",
                     borderRadius: 15,
                     display: "flex",
-                    padding: 15,
+                    padding: windowWidth < 1140 ? 10 : 15,
                     boxSizing: "border-box",
                     flexDirection: "column",
                     alignItems: "flex-start",
                     textAlign: "left"
                   }}>
                     <div style={{
-                      fontSize: 22,
+                      fontSize: windowWidth < 1140 ? 19 : 22,
                       fontWeight: 600
                     }}>
                       Memory
                     </div>
                     <div style={{
-                      marginTop: 10
+                      marginTop: 10,
+                      fontSize: windowWidth < 1140 ? 14 : 16,
                     }}>
                       Remembers important information.
                     </div>
                     <div style={{
-                      marginTop: 8
+                      marginTop: 8,
+                      fontSize: windowWidth < 1140 ? 14 : 16,
                     }}>
                     Builds a timeline for what matters to you.
                     </div>
@@ -2098,16 +2189,17 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     position: "absolute",
                     bottom: -42,
                     right: -40,
-                    width: 320
+                    width: isMobile ? 320 : windowWidth < 1020 ? 235 : windowWidth < 1140 ? 275 : 310
                   }} />
                 </div>
                 <div style={{
-                  width: 290,
-                  height: 90,
+                  width: isMobile ? 350 : windowWidth < 1020 ? 200 : windowWidth < 1140 ? 250 : 290,
+                  height: windowWidth < 1140 ? 65 : 90,
                   borderRadius: 15,
                   padding: 3,
+                  boxSizing: 'border-box',
                   marginTop: 10,
-                  marginLeft: 10,
+                  marginLeft: isMobile ? 0 : 10,
                   background: "linear-gradient(to bottom, rgba(255, 255, 255, 0.25) 0%, #6236BA 100%)",
                   position: "relative"
                 }}>
@@ -2117,13 +2209,13 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     height: "100%",
                     borderRadius: 15,
                     display: "flex",
-                    padding: 15,
+                    padding: windowWidth < 1140 ? 10 : 15,
                     boxSizing: "border-box",
                     flexDirection: "column",
                     alignItems: "flex-start"
                   }}>
                     <div style={{
-                      fontSize: 22,
+                      fontSize: windowWidth < 1020 ? 16 : windowWidth < 1140 ? 18 : 22,
                       fontWeight: 600
                     }}>
                       Build-In Data Privacy
@@ -2132,7 +2224,8 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      marginTop: 10
+                      marginTop: windowWidth < 1140 ? 5 : 10,
+                      fontSize: windowWidth < 1140 ? 14 : 16,
                     }}>
                       <div style={{
                       }}>
@@ -2149,28 +2242,28 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
             </div>
           </div>
           <div style={{
-            position: "absolute",
-            top: 1170,
+            position: isMobile ? "relative" : "absolute",
+            top: isMobile ? 0 : windowWidth < 1020 ? 650 : 700,
             display: "flex",
             justifyContent: "center",
             flexDirection: "column",
             width: "100%",
-            transform: `translateY(-${(scrollPosition >= 2050 ? 2050 : scrollPosition) * 0.35}px)`
+            transform: !isMobile ? `translateY(-${(scrollPosition >= 2050 ? 2050 : scrollPosition) * 0.35}px)` : "none"
           }}>
             <div style={{
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              marginLeft: 400 
+              marginLeft: isMobile ? 0 : 400 
             }}>
               <div style={{
                 display: "flex",
                 alignItems: "flex-start",
                 flexDirection: "column",
-                marginTop: 15
+                marginTop: isMobile ? 105 : 15
               }}>
                 <div style={{
-                    fontSize: 33,
+                    fontSize: titleFontSize,
                     maxWidth: 540,
                     textAlign: "left",
                 }}>
@@ -2185,7 +2278,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   </span>
                 </div>
               </div>
-              <div style={{
+              {!isMobile && <div style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -2214,43 +2307,47 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   borderRadius: 15
                 }}></div>
                 </div>
-              </div>
-              <div style={{
+              </div>}
+              {!isMobile && <div style={{
                 position: "absolute",
-                height: 200,
+                height: 280,
                 top: 95,
                 width: 5,
                 background: gradient10Down
-              }} />
+              }} /> }
             </div>
             <div style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              marginTop: 300,
-              transform: `translateY(-${(scrollPosition >= 2450 ? 2450 : scrollPosition) * 0.14}px)`
+              marginTop: isMobile ? 0 : 300,
+              transform: !isMobile ? `translateY(-${(scrollPosition >= 2450 ? 2450 : scrollPosition) * 0.14}px)` : "none"
             }}>
               <div style={{
                 display: "flex",
-                marginLeft: 150,
-                width: 300,
-                position: "relative",
+                right: isMobile ? 0 : "50%",
+                top: isMobile ? 460 : 270,
+                width: isMobile ? "100%" : windowWidth < 1140 ? 300 : 350,
+                paddingRight: isMobile ? 0 : windowWidth < 1020 ? 120 : 170,
+                position: "absolute",
                 height: 400,
                 zIndex: 99
               }}>
                 <div style={{
-                    position: "absolute",
-                    right: -120,
-                    top: 70,
+                    position: "relative",
                     textAlign: "right", 
-                    justifySelf: "flex-end"
+                    justifySelf: "flex-end",
+                    width: isMobile ? "100%" : "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: isMobile ? "center" : "flex-end",
                 }}>
                   <div style={{
-                    fontSize: 33,
-                    maxWidth: 250,
+                    fontSize: titleFontSize,
+                    maxWidth: isMobile ? "100%" : 250,
                     justifySelf: "flex-end",
-                    marginTop: 350,
-                    transform: `translateY(-${(scrollPosition >= 2330 ? 2330 : scrollPosition) * 0.14}px)`
+                    marginTop: isMobile ? 120 : 350,
+                    transform: !isMobile ? `translateY(-${(scrollPosition >= 2330 ? 2330 : scrollPosition) * 0.14}px)` : "none"
                   }}>
                     <span
                      style={{
@@ -2267,35 +2364,45 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     opacity: 0.7,
                     fontSize: 17,
                     marginTop: 8,
-                    transform: `translateY(-${(scrollPosition >= 2520 ? 2520 : scrollPosition) * 0.13}px)`
+                    transform: !isMobile ? `translateY(-${(scrollPosition >= 2520 ? 2520 : scrollPosition) * 0.13}px)` : "none",
+                    textAlign: isMobile ? "center" : "right",
                   }}>
                     Be what you want to be. <br />
                     Customise the background and the character.
                   </div>
                   <img style={{
-                    marginTop: -15,
+                    marginTop: isMobile ? 10 : -15,
                     width: 70,
-                    transform: `translateY(-${(scrollPosition >= 2540 ? 2540 : scrollPosition) * 0.12}px)`
+                    transform: !isMobile ? `translateY(-${(scrollPosition >= 2540 ? 2540 : scrollPosition) * 0.12}px)` : "none"
                   }} src="customize-icon.png" />
                 </div>
               </div>
               <div style={{
                 position: "relative",
-                marginTop: 80
+                marginTop: isMobile ? 20 : 170,
+                height: 600,
+                width: "100%"
               }}>
               <img src="env-view.png" style={{
-                width: 1100,
-                position: "relative"
+                width: isMobile ? 400 : windowWidth < 805 ? 550 : windowWidth < 1020 ? 600 : windowWidth < 1140 ? 720 : 870,
+                position: isMobile ? "relative" : "absolute",
+                left: isMobile ? 0 : "50%",
+                transform: isMobile ? "none" : "translateX(-25%)",
               }} />
                <div style={{
                   position: "absolute",
-                  bottom: -200,
-                  left: 0,
-                  zIndex: 9999
+                  bottom: isMobile ? 200 : -230,
+                  right: isMobile ? 0 : "50%",
+                  zIndex: 9999,
+                  width: isMobile ? "100%" : "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  paddingLeft: isMobile ? 10 : 0
                 }}>
                   <div style={{
                     width: 300,
                     height: 42,
+                    marginLeft: isMobile ? 15 : 0,
                     background: 'rgba(25, 25, 25, 0.8)',
                     backdropFilter: "blur(8px)",
                     WebkitBackdropFilter: "blur(8px)",
@@ -2305,7 +2412,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     alignItems: "center",
                     justifyContent: "center",
                     border: "1px solid rgba(255, 255, 255, 0.3)",
-                    transform: `translateY(-${(scrollPosition >= 2720 ? 2720 : scrollPosition) * 0.14}px)`
+                    transform: !isMobile ? `translateY(-${(scrollPosition >= 2720 ? 2720 : scrollPosition) * 0.14}px)` : "none"
                   }}>
                     <TbPrompt style={{
                       marginRight: 5,
@@ -2321,6 +2428,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   <div style={{
                     width: 150,
                     height: 42,
+                    marginLeft: isMobile ? 15 : 0,
                     background: 'rgba(25, 25, 25, 0.8)',
                     backdropFilter: "blur(8px)",
                     WebkitBackdropFilter: "blur(8px)",
@@ -2331,7 +2439,7 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                     alignItems: "center",
                     justifyContent: "center",
                     border: "1px solid rgba(255, 255, 255, 0.3)",
-                    transform: `translateY(-${(scrollPosition >= 2720 ? 2720 : scrollPosition) * 0.14}px)`
+                    transform: !isMobile ? `translateY(-${(scrollPosition >= 2720 ? 2720 : scrollPosition) * 0.14}px)` : "none"
                   }}>
                     <IoIosShirt style={{
                       marginRight: 5,
@@ -2354,34 +2462,102 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               left: "50%",
               width: 850,
               opacity: 0.5,
-              top: 780,
+              bottom: isMobile ? -100 : 250,
               transform: "translateX(-50%)"
             }}
               autoPlay={true}
               loop
               muted
             >
-              <source src="orb-graphic.mp4" type="video/mp4" />
+              <source src="orb-graphic_compressed_resized.mp4" type="video/mp4" />
               Your browser does not support the video tag.
             </video>
+            <div style={{
+              position: "relative",
+              width: isMobile ? "auto" : 900,
+              alignSelf: "center",
+              height: 480,
+              display: "flex",
+              flexDirection: "row",
+              justifyContent: "center",
+              borderTop: '1px dotted rgba(255, 255, 255, 0.3)',
+              borderBottom: '1px dotted rgba(255, 255, 255, 0.3)',
+              marginTop: windowWidth < 1140 ? 20 : 80,
+              transform: !isMobile ? `translateY(-${(scrollPosition >= 2850 ? 2850 : scrollPosition) * 0.13}px)` : "none"
+            }}>
+              <video
+              style={{
+                width: 320,
+                marginLeft: isMobile ? -100 : 0,
+                alignSelf: "flex-start"
+              }}
+                autoPlay={true}
+                loop
+                muted
+              >
+                <source src="Carl_jung_smoking_pipe_compressed_resized.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+              <div style={{
+                padding: 30,
+                paddingTop: 0,
+                marginLeft: isMobile ? -100 : 15,
+                height: "100%",
+                display: "flex",
+                alignContent: "center",
+                justifyContent: "center",
+                flexDirection: "column",
+                boxSizing: "border-box",
+              }}>
+                <div style={{
+                  fontSize: titleFontSize,
+                  color: "#8DE1FF",
+                  textAlign: "left",
+                }}>
+                  Why Psychology?
+                </div>
+                <div style={{
+                  textAlign: "left",
+                  marginTop: 20,
+                  fontSize: isMobile ? 16 : 19,
+                  letterSpacing: 0.5,
+                  opacity: 0.75
+                }}>
+                  “A great change of our psychological attitude is imminent. That is certain. Because we need more psychology, we need more understanding of human nature because the only real danger that exists is man himself.”
+                </div>
+                <div style={{
+                  textAlign: "left",
+                  marginTop: 20,
+                  fontSize: 20,
+                  letterSpacing: 0.5,
+                  opacity: 0.75
+                }}>
+                  - Carl Jung
+                </div>
+              </div>
+            </div>
             <div style={{
               width: "100%",
               display: "flex",
               flexDirection: "column",
-              marginTop: 100,
+              marginTop: 0,
+              height: 450,
               justifyContent: "center",
               alignItems: "center",
-              transform: `translateY(-${(scrollPosition >= 2850 ? 2850 : scrollPosition) * 0.13}px)`
+              zIndex: 999,
+              padding: isMobile ? 15 : 0,
+              boxSizing: "border-box",
+              transform: !isMobile ? `translateY(-${(scrollPosition >= 3250 ? 3250 : scrollPosition) * 0.13}px)` : "none"
             }}>
               <div style={{
-                fontSize: 32,
+                fontSize: titleFontSize,
                 color: "#8DE1FF"
               }}>
                 Still not sure?
               </div>
               <div style={{
                 marginTop: 5,
-                fontSize: 21,
+                fontSize: isMobile ? 16 : 21,
                 color: "white",
                 opacity: 0.7
               }}>
@@ -2393,15 +2569,15 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                   backgroundColor: "rgba(255, 255, 255, 0.9)",
                   color: "#000",
                   border: "none",
-                  padding: "0.8rem 1.3rem 0.8rem 1.5rem",
+                  padding: isMobile ? "0.5rem 1rem" : "0.8rem 1.3rem 0.8rem 1.5rem",
                   borderRadius: "2rem",
-                  fontSize: "16px",
+                  fontSize: isMobile ? 14 : "16px",
                   fontWeight: "600",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   transition: "all 0.2s ease",
-                  height: 50,
+                  height: isMobile ? 42 : 50,
                 }}
                 onMouseOver={(e) => {
                 e.currentTarget.style.transform = "scale(1.05)";
@@ -2413,11 +2589,14 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 }}
                 onClick={toggleCreateAccountView}
               >
-                  Create Account For Free <BsArrowRight style={{ marginLeft: "0.5rem", fontSize: "1.2rem" }} />
+                  <span>{isMobile ? "Sign Up For Free" : "Create Account For Free"}</span><BsArrowRight style={{ marginLeft: "0.5rem", fontSize: "1.2rem" }} />
               </button>
             </div>
-            <div style={{
-              marginTop: 50,
+          </div>
+          </div>
+          <div style={{
+              position: "absolute",
+              bottom: 0,
               backdropFilter: "blur(5px)",
               WebkitBackdropFilter: "blur(5px)",
               height: 93,
@@ -2429,17 +2608,17 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
               paddingLeft: 50,
               paddingRight: 50,
               boxSizing: "border-box",
-              flexDirection: "row",
-              transform: `translateY(-${(scrollPosition >= 2850 ? 2850 : scrollPosition) * 0.1}px)`
+              flexDirection: "row"
             }}>
               <div style={{
-                fontSize: 17,
-                opacity: 0.7
+                fontSize: isMobile ? 16 : 17,
+                opacity: 0.7,
+                width: isMobile ? "100%" : "auto"
               }}>
                 Copyright 2025 - <b>SelfAI.live</b>
               </div>
               <div style={{
-                display: "flex",
+                display: isMobile ? "none" : "flex",
                 alignItems: "center",
                 opacity: 0.8
               }}>
@@ -2483,8 +2662,6 @@ const Overlay = memo(({ showLoginView, smallerThan850, isSmallSize, navigateBack
                 </div>
               </div>
             </div>
-          </div>
-          </div>
         </div>
       )}
       </div>

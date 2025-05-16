@@ -7,7 +7,7 @@ import LoadingDots from './LoadingDots';
 /**
  * WavePanel – balanced tone: darker base with subtle but noticeable color.
  */
-const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingModel, apiSelectedModel, setShowModelSelectionScreen }) => {
+const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingModel, apiSelectedModel, setShowModelSelectionScreen, windowWidth, isMobile }) => {
   const waveAnimation = `
     @keyframes wave {
       0%   { transform: translateX(0); }
@@ -22,12 +22,16 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
         position: 'absolute', inset: 0, zIndex: 999,
         background: 'rgba(3,3,8,0.65)',
         backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center'
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
       <div
         style={{
-          position: 'relative', width: 1100, height: 780,
+          position: 'relative', width: windowWidth < 1140 ? 800 : 1100, height: isMobile ? "calc(100% - 20px)" : 780,
+          margin: windowWidth < 820 ? 15 : 0,
+          padding: windowWidth < 820 ? 10 : 0,
+          boxSizing: 'border-box',
+          maxWidth: "100%",
           borderRadius: 20,
           background: 'rgba(0,0,0,1)',
           backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
@@ -90,25 +94,29 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
             />
           ))}
         </svg>
-        <div style={{zIndex: 999, position: "relative"}}>
+        <div style={{zIndex: 999, position: "relative", display: "flex", flexDirection: "column", height: isMobile ? "calc(100% - 40px)" : "auto"}}>
           <div style={{
             marginTop: 52,
             color: 'rgba(255, 255, 255, 0.88)',
             opacity: 0.88,
           }}>
             <div style={{
-              fontSize: 27,
+              fontSize: isMobile ? 20 : 27,
             }}><span style={{ fontWeight: 600 }}>Psychologist</span> Model Selection</div>
             <div style={{
-              marginTop: 6
+              marginTop: 6,
+              fontSize: isMobile ? 14 : 16,
             }}>Explore your true Self. Let go of what holds you back. Select what's best for you.</div>
           </div>
           <div style={{
             marginTop: 25,
             boxSizing: "border-box",
             display: "flex",
-            flexDirection: "row",
-            justifyContent: "center"
+            flexDirection: isMobile ? "column" : "row",
+            justifyContent: isMobile ? "flex-start" : "center",
+            overflow: "auto",
+            alignItems: "center",
+            overflow: "auto"
           }}>
             <div onMouseOver={(e) => {
               e.currentTarget.style.transform = "scale(1.05)";
@@ -116,7 +124,7 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
             onMouseOut={(e) => {
               e.currentTarget.style.transform = "scale(1)";
             }} style={{
-              width: "50%",
+              width: isMobile ? "90%" : "50%",
               transition: "transform 0.3s ease",
               maxWidth: 350,
               display: "flex",
@@ -227,14 +235,15 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
             onMouseOut={(e) => {
               e.currentTarget.style.transform = "scale(1)";
             }} style={{
-              width: "50%",
+              width: isMobile ? "90%" : "50%",
               display: "flex",
               maxWidth: 350,
-              marginLeft: 55,
+              marginLeft: isMobile ? 0 : 55,
               justifyContent: "center",
               flexDirection: "column",
+              marginTop: isMobile ? 25 : 0,
               alignItems: "center",
-              border: selectedModel === "Leif" ? "3px solid #AD60FF" : "3px solid rgb(106, 108, 134)",
+              border: selectedModel === "Echo" ? "3px solid #AD60FF" : "3px solid rgb(106, 108, 134)",
               transition: "transform 0.3s ease",
               borderRadius: 15,
               padding: 25,
@@ -252,7 +261,7 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
                 fontSize: 22,
                 opacity: 0.85
               }}>
-                Leif
+                Echo
               </div>
               <div style={{
                 fontSize: 16,
@@ -272,23 +281,23 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
                 borderBottom: '1px dotted rgba(255, 255, 255, 0.75)',
                 width: "100%"
               }}>
-                Fine-tuned on fun and creative datasets.
+                Fine-tuned on patient-therapist conversations
               </div>
               <div style={{
                 fontSize: 16,
                 opacity: 0.7,
                 marginTop: 25
               }}>
-                Best for casual conversations, exploring relationships & friends, having fun and talking about various subjects.
+                Best for relaxed, supportive chats focused on relationships and self-reflection.
               </div>
               <div style={{
                 position: "absolute",
                 left: "50%",
                 transform: "translateX(-50%)",
                 bottom: 20,
-                background: selectedModel === "Leif" ? "#A36DF7" : "#5054A5",
+                background: selectedModel === "Echo" ? "#A36DF7" : "#5054A5",
                 border: "1px solid rgba(255, 255, 255, 0.25)",
-                width: selectedModel === "Leif" ? 120 : 100,
+                width: selectedModel === "Echo" ? 120 : 100,
                 height: 32,
                 borderRadius: 5,
                 fontSize: 12,
@@ -298,14 +307,14 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
                 alignItems: "center",
                 justifyContent: "center",
                 cursor: "pointer"
-              }} onClick={() => setSelectedModel("Leif")}>
-                {selectedModel === "Leif" ? <IoIosCheckmarkCircleOutline style={{
+              }} onClick={() => setSelectedModel("Echo")}>
+                {selectedModel === "Echo" ? <IoIosCheckmarkCircleOutline style={{
                   fontSize: 21,
                   color: "white",
                   marginRight: 5
                 }} /> : null}
                 <span>
-                {selectedModel === "Leif" ? "SELECTED" : "SELECT"}
+                {selectedModel === "Echo" ? "SELECTED" : "SELECT"}
                 </span>
               </div>
             </div>
@@ -316,7 +325,8 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
             opacity: 0.88,
           }}>
             <div style={{
-              marginTop: 6
+              marginTop: 6,
+              fontSize: isMobile ? 14 : 16,
             }}>Model selection can be changed later in Settings. For now, pick one.</div>
           </div>
           <div style={{

@@ -325,3 +325,27 @@ body {
   color: black;
   transition: background-color 0.4s ease, color 0.4s ease;
 }
+
+.login-button {
+  background: transparent;
+  color: white;
+  font-size: 17px;
+  padding: 8px 14px;
+  border-radius: 21px;
+  cursor: pointer;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+@media screen and (max-width: 768px) {
+  .login-button {
+    font-size: 15px;
+    padding: 6px 12px;
+  }
+
+}
+
+.login-button:hover {
+  background: white;
+  color: black;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}

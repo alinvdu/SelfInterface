@@ -5,7 +5,7 @@ import { IoCloseCircleOutline } from "react-icons/io5";
 import LoadingDots from "./LoadingDots";
 import { MdErrorOutline } from "react-icons/md";
 
-const EnvironmentModal = ({ api, token, setShowEnvironmentModal, setSelectedEnv, setEnvironments, environments }) => {
+const EnvironmentModal = ({ api, token, setShowEnvironmentModal, setSelectedEnv, setEnvironments, environments, isMobile }) => {
     const [prompt, setPrompt] = useState(null);
     const [name, setName] = useState("");
     const [imageUrl, setImageUrl] = useState(null);
@@ -67,7 +67,8 @@ const EnvironmentModal = ({ api, token, setShowEnvironmentModal, setSelectedEnv,
             position: 'absolute', inset: 0, zIndex: 999,
             background: 'rgba(3,3,8,0.65)',
             backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 15
         }}>
         <div
             style={{
@@ -81,7 +82,7 @@ const EnvironmentModal = ({ api, token, setShowEnvironmentModal, setSelectedEnv,
                 alignItems: "center",
                 justifyContent: "flex-start",
                 flexDirection: "column",
-                padding: 25,
+                padding: isMobile ? 25 : 0,
                 boxSizing: "border-box",
             }}
         >

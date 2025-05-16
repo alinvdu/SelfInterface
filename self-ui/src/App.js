@@ -403,7 +403,7 @@ function App() {
   const [showModelSelectionScreen, setShowModelSelectionScreen] = useState(false);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-  const isMobile = windowWidth < 786;
+  const isMobile = windowWidth < 768;
   const isSmallSize = windowWidth < 1200;
   const smallerThan850 = windowWidth < 850;
   const [isChatExpanded, toggleExpandChat] = useState(!isMobile)
@@ -456,8 +456,13 @@ function App() {
 
   const fullEmoteRef = useRef(null)
   const microEmoteRef = useRef(null)
+  const sessionIdRef = useRef(null)
 
   const [isUpdatingModel, setIsUpdatingModel] = useState(false);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
 
   const updateModel = async (model) => {
     setIsUpdatingModel(true);
@@ -468,7 +473,7 @@ function App() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ modelSelection: model })
+        body: JSON.stringify({ modelSelection: model, sessionId: sessionIdRef.current })
       });
 
       if (!res.ok) throw new Error("Failed to update model");
@@ -476,7 +481,7 @@ function App() {
       setSelectedModel(model);
       setShowModelSelectionScreen(false);
 
-      if (apiSelectedModel.current) {
+      if (!apiSelectedModel.current) {
         apiSelectedModel.current = model;
         createAndConnectWs(sessionId, token);
       } else {
@@ -1023,17 +1028,19 @@ function App() {
 
             // Set sessionId and create WebSocket connection
             setSessionId(newSessionData.session_id);
-            if (!newSessionData.model_selection) {
-              setShowModelSelectionScreen(true);
-              return;
-            } else {
-              apiSelectedModel.current = newSessionData.model_selection
-              setSelectedModel(newSessionData.model_selection)
-            }
 
             if (newSessionData.environments && newSessionData.environments.length) {
               setEnvironments([...environments, ...newSessionData.environments])
               setAreEnvsLoaded(true)
+            }
+
+            if (!newSessionData.model_selection) {
+              setShowModelSelectionScreen(true);
+              setSelectedModel("Atlas")
+              return;
+            } else {
+              apiSelectedModel.current = newSessionData.model_selection
+              setSelectedModel(newSessionData.model_selection)
             }
 
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -1312,100 +1319,6 @@ function App() {
               />
             </div>
           )}
-
-          {/* Call Options Dropdown */}
-          {isCallDropdownVisible && (
-            <div 
-              ref={callDropdownRef}
-              className="callOptionsDropdown"
-              onClick={(e) => e.stopPropagation()} // Prevent clicks from reaching document
-              style={{
-                position: 'absolute',
-                bottom: '100%',
-                marginBottom: '12px',
-                width: '280px',
-                background: isMobile ? 'rgba(83, 83, 83, 0.85)' : 'rgba(0, 0, 0, 0.25)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                border: '1px solid rgba(255, 255, 255, 0.4)',
-                borderRadius: '16px',
-                padding: '12px',
-                zIndex: 10,
-                animation: 'fadeInUp 0.3s ease-out forwards', // Animation
-                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
-              }}
-            >
-              {/* Audio Call Option */}
-              <div 
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  marginBottom: '8px',
-                  cursor: 'pointer',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent triggering parent onClick
-                  setIsCallDropdownVisible(false);
-                  toggleExpandChat(false);
-                  setPhoneCalling(true);
-                  initiateWebRTC(false); // Audio call
-                  clearInterval(progressIntervalRef.current);
-                  setShowTipCard(false);
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                }}
-              >
-                <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '16px' }}>Audio Call</div>
-                <div style={{ fontSize: '14px', opacity: 0.85 }}>Real time voice sentiment emotion recognition</div>
-              </div>
-              
-              {/* Video Call Option */}
-              <div 
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent triggering parent onClick
-                  setIsCallDropdownVisible(false);
-                  toggleExpandChat(false);
-                  setPhoneCalling(true);
-                  initiateWebRTC(true); // Video call
-                  setShowVideo(true);
-                  clearInterval(progressIntervalRef.current);
-                  setShowTipCard(false);
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                }}
-              >
-                <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '16px' }}>Video Call</div>
-                <div style={{ fontSize: '14px', opacity: 0.85 }}>Real time video and voice sentiment emotion recognition</div>
-              </div>
-            </div>
-          )}
         </div>
       )
     }
@@ -1588,10 +1501,11 @@ function App() {
       }}>
       <div style={{
         position: "absolute",
-        top: 15,
-        width: 400,
-        right: 25,
-        bottom: 15,
+        top: isMobile ? 10 : 15,
+        width: isMobile ? 350 : 400,
+        right: isMobile ? 10 : 25,
+        boxSizing: "border-box",
+        bottom: isMobile ? 10 : 15,
         borderRadius: 15,
         background: 'rgba(0, 0, 0, 1)',
         backdropFilter: "blur(8px)",
@@ -1650,7 +1564,8 @@ function App() {
         </div>
         <div style={{
           marginTop: 70,
-          width: "100%"
+          width: "100%",
+          overflowY: "auto",
         }}>
           <div style={{
             marginRight: 15,
@@ -1714,7 +1629,7 @@ function App() {
                     textAlign: "left",
                     marginTop: 5
                   }}>
-                  {selectedModel === "Atlas" ? "Fine-tuned for introspection, psychology and philosophy. Perfect for inner self exploration!" : "Fun and creative. The ideal partner to talk about your family, friends and life."}
+                  {selectedModel === "Atlas" ? "Best for exploring your inner self, the connection with the universe and consciousness." : "Best for relaxed, supportive chats focused on relationships and self-reflection."}
                   </div>
                   <div style={{width: "100%", display: "flex"}}>
                     <div style={{
@@ -2031,7 +1946,8 @@ function App() {
           setShowCreateAccount(false);
           setShowLoginView(false);
         }}
-        setShowPrivacyPolicyDialog={setShowPrivacyPolicyDialog}/>}
+        setShowPrivacyPolicyDialog={setShowPrivacyPolicyDialog}
+        windowWidth={windowWidth}/>}
         {showMenu && renderMenu()}
       {!showIntroMode && <div style={{
         position: "fixed",
@@ -2128,7 +2044,6 @@ function App() {
             flexDirection: isModelDropdownOpen ? "column" : "row",
             overflow: "hidden",
             maxHeight: isMobile && isModelDropdownOpen ? "calc(100vh - 200px)" : "none",
-            width: isMobile && isModelDropdownOpen ? "80%" : "auto",
             zIndex: 99
           }}
           onClick={() => !isModelDropdownOpen && setIsModelDropdownOpen(true)}
@@ -2187,7 +2102,7 @@ function App() {
                   ×
                 </div>
               </div>
-              <div style={{ maxHeight: "190px", maxWidth: 280, overflowY: "auto", width: "100%", fontSize: 15 }}>
+              <div style={{ maxHeight: "190px", maxWidth: 280, width: isMobile ? 250 : "100%", overflowY: "auto", fontSize: 15 }}>
                 {selectedModel === "Atlas" ? <div style={{
                   borderTop: '1px solid grey',
                   borderBottom: '1px solid grey',
@@ -2195,7 +2110,7 @@ function App() {
                   paddingTop: 8,
                   fontSize: 14
                 }}>
-                  Fine-tuned for introspection, psychology and philosophy. Perfect for inner self exploration!
+                  Best for exploring your inner self, the connection with the universe and consciousness.
                 </div> : <div style={{
                   borderTop: '1px solid grey',
                   borderBottom: '1px solid grey',
@@ -2203,7 +2118,7 @@ function App() {
                   paddingTop: 8,
                   fontSize: 14
                 }}>
-                  Fun and creative. The ideal partner to talk about your family, friends and life.
+                  Best for relaxed, supportive chats focused on relationships and self-reflection.
                 </div>}
                 <div style={{width: "100%", display: "flex", alignItems: "center", justifyContent: "center"}}>
                 <div style={{
@@ -2235,7 +2150,7 @@ function App() {
             top: isMobile ? 10 : token ? "16px" : "22px",
             right: "16px",
             zIndex: 2,
-            background: token ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)',
+            background: token ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.85)',
             backdropFilter: "blur(15px)",
             WebkitBackdropFilter: "blur(15px)",
             border: "1px solid rgba(255, 255, 255, 0.3)",
@@ -2803,9 +2718,11 @@ function App() {
             updateModel={updateModel}
             isUpdatingModel={isUpdatingModel}
             setShowModelSelectionScreen={setShowModelSelectionScreen}
+            windowWidth={windowWidth}
+            isMobile={isMobile}
           />}
           {showEnvironmentModal &&
-          <EnvironmentModal api={api} token={token} setShowEnvironmentModal={setShowEnvironmentModal} setSelectedEnv={setSelectedEnv} setEnvironments={setEnvironments} environments={environments} />}
+          <EnvironmentModal isMobile={isMobile} api={api} token={token} setShowEnvironmentModal={setShowEnvironmentModal} setSelectedEnv={setSelectedEnv} setEnvironments={setEnvironments} environments={environments} />}
       </div>
   );
 }
