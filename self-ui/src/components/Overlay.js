@@ -1564,7 +1564,7 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
                     marginTop: 5,
                     textAlign: isMobile ? "center" : "left",
                   }}>
-                    Interact with the most advanced AI platform build from the ground up for the soul.
+                    Interact with the most advanced AI platform—designed from the ground up to help you explore, understand, and expand your inner self.
                   </div>
                 </div>
               <button 
@@ -2639,7 +2639,10 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
                 <div style={{
                   display: "flex",
                   alignItems: "center",
-                  marginLeft: 15
+                  marginLeft: 15,
+                  cursor: "pointer"
+                }} onClick={() => {
+                  window.open("https://discord.gg/UsqrZ7Ar", "_blank");
                 }}>
                   <FaDiscord style={{
                     color: "white",
@@ -2652,7 +2655,10 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
                 <div style={{
                   display: "flex",
                   alignItems: "center",
-                  marginLeft: 15
+                  marginLeft: 15,
+                  cursor: "pointer"
+                }} onClick={() => {
+                  window.open("https://www.youtube.com/@alinvdu", "_blank");
                 }}>
                   <FaYoutube style={{
                     color: "white",
