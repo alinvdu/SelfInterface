@@ -12,8 +12,10 @@ import { FaTwitter } from "react-icons/fa";
 import { FaDiscord } from "react-icons/fa";
 import { FaYoutube } from "react-icons/fa";
 import { BsGear } from "react-icons/bs";
+import LoadingDots from './LoadingDots';
+import LoadingDiv from './LoadingDiv';
 
-const Overlay = memo(({ windowWidth, showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView, setShowPrivacyPolicyDialog, isMobile }) => {
+const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan850, isSmallSize, navigateBack, showCreateAccount, handleStartApp, toggleLoginView, signInWithGoogle, token, toggleCreateAccountView, setShowPrivacyPolicyDialog, isMobile }) => {
   const { signInWithEmail, register, resetPassword } = useAuth();
   
   // Form states
@@ -2666,6 +2668,29 @@ const Overlay = memo(({ windowWidth, showLoginView, smallerThan850, isSmallSize,
       )}
       </div>
       </div>
+      {assetsLoading && <div style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0, 0, 0, 1)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999999999
+      }}><LoadingDiv
+          isLoading 
+          duration={0.75} 
+          width={`${30}px`}
+          height={`${30}px`}
+          borderWidth={1}
+          loadingColor="#FFFFFF"
+          borderColor="rgba(255, 255, 255, 0.5)"
+          borderRadius={`${10}px`}
+          backgroundColor="transparent"
+          loadingSegmentPercentage={25}
+        /></div>}
     </div>
   );
 });

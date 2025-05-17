@@ -42,10 +42,24 @@ import { IoIosLogOut } from "react-icons/io";
 import { IoIosCloseCircleOutline } from "react-icons/io";
 import MyPanelWithWaves from "./components/WavyPanel.js";
 import EnvironmentModal from "./components/EnvironmentModal.js";
+import usePreloadAssets from "./hooks/ResourcePreload.js";
 
 const WS_RECONNECT_TIMEOUT = 1500
 
 const api = "https://selfai.live";
+
+const IMAGE_ASSETS = [
+  "warp-effect.png",
+  "atlas-smile-purple-filter.png"
+];
+const VIDEO_ASSETS = [
+  "voice_talk_example_trimmed_compressed_resized.mp4",
+  "chat_examplee.mp4",
+  "orb-graphic_compressed_resized.mp4",
+  "Carl_jung_smoking_pipe_compressed_resized.mp4",
+  "floating-psychological-self.mp4",
+  "sphere-layers_compressed_resized.mp4"
+];
 
 function ModelLoader() {
   return (
@@ -147,6 +161,11 @@ function BackgroundScene({
 function App() {
   const [modelLoaded, setModelLoaded] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
+
+  const assetsLoaded = usePreloadAssets({
+    images: IMAGE_ASSETS,
+    videos: VIDEO_ASSETS
+  });
   
   const handleModelLoaded = () => {
     setModelLoaded(true);
@@ -1028,9 +1047,11 @@ function App() {
 
             // Set sessionId and create WebSocket connection
             setSessionId(newSessionData.session_id);
-
+            console.log('envs are', newSessionData.environments)
             if (newSessionData.environments && newSessionData.environments.length) {
               setEnvironments([...environments, ...newSessionData.environments])
+              setAreEnvsLoaded(true)
+            } else {
               setAreEnvsLoaded(true)
             }
 
@@ -1936,7 +1957,7 @@ function App() {
         height: "100%",
       }}
     >
-        {showIntroMode && <Overlay isMobile={isMobile} smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
+        {showIntroMode && <Overlay assetsLoading={!assetsLoaded} isMobile={isMobile} smallerThan850={smallerThan850} isSmallSize={isSmallSize} token={token} showCreateAccount={showCreateAccount} signInWithGoogle={signInWithGoogle} showLoginView={showLoginView} handleStartApp={handleStartApp} toggleLoginView={() => {
           setShowCreateAccount(false)
           setShowLoginView(true)
         }} toggleCreateAccountView={() => {
