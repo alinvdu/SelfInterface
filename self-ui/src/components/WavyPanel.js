@@ -114,9 +114,8 @@ const WavePanel = ({ selectedModel, setSelectedModel, updateModel, isUpdatingMod
             display: "flex",
             flexDirection: isMobile ? "column" : "row",
             justifyContent: isMobile ? "flex-start" : "center",
-            overflow: "auto",
-            alignItems: "center",
-            overflow: "auto"
+            overflow: isMobile ? "auto" : "visible",
+            alignItems: "center"
           }}>
             <div onMouseOver={(e) => {
               e.currentTarget.style.transform = "scale(1.05)";

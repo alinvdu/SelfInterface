@@ -82,7 +82,7 @@ const EnvironmentModal = ({ api, token, setShowEnvironmentModal, setSelectedEnv,
                 alignItems: "center",
                 justifyContent: "flex-start",
                 flexDirection: "column",
-                padding: isMobile ? 25 : 0,
+                padding: 25,
                 boxSizing: "border-box",
             }}
         >
