@@ -8,7 +8,7 @@ import { useAuth } from '../auth/AuthContext';
 import RotatingText from './RotatingText';
 import { TbPrompt } from "react-icons/tb";
 import { IoIosShirt } from "react-icons/io";
-import { FaTwitter } from "react-icons/fa";
+import { FaXTwitter } from "react-icons/fa6";
 import { FaDiscord } from "react-icons/fa";
 import { FaYoutube } from "react-icons/fa";
 import { BsGear } from "react-icons/bs";
@@ -2626,15 +2626,18 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
               }}>
                 <div style={{
                   display: "flex",
-                  alignItems: "center"
+                  alignItems: "center",
+                  cursor: "pointer"
+                }} onClick={() => {
+                  window.open("https://x.com/self_ai_live", "_blank");
                 }}>
-                  <FaTwitter style={{
+                  <FaXTwitter style={{
                     color: "white",
                     fontSize: 19
                   }} />
                   <span style={{
                     marginLeft: 5
-                  }}>Twitter</span>
+                  }}>X</span>
                 </div>
                 <div style={{
                   display: "flex",
