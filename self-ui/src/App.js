@@ -1708,7 +1708,7 @@ function App() {
                 width: "100%",
                 overflowX: "auto"
               }}>
-                {environments.map(env => {
+                {environments.length && selectedEnv && environments.map(env => {
                   const isSelected = env.name === selectedEnv.name
                   return (
                   <div style={{
