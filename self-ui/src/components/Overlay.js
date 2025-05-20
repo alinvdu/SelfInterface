@@ -394,6 +394,7 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
           autoPlay={true}
           loop
           muted
+          playsInline
         >
           <source src="floating-psychological-self.mp4" type="video/mp4" />
           Your browser does not support the video tag.
@@ -487,6 +488,7 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
           autoPlay={true}
           loop
           muted
+          playsInline
         >
           <source src="sphere-layers_compressed_resized.mp4" type="video/mp4" />
           Your browser does not support the video tag.
@@ -2038,6 +2040,7 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
                     autoPlay
                     muted
                     loop
+                    playsInline
                   >
                     <source src="voice_talk_example_trimmed_compressed_resized.mp4" type="video/mp4" />
                   </video>
@@ -2115,6 +2118,7 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
                     autoPlay
                     muted
                     loop
+                    playsInline
                   >
                     <source src="chat_examplee.mp4" type="video/mp4" />
                   </video>
@@ -2470,6 +2474,7 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
               autoPlay={true}
               loop
               muted
+              playsInline
             >
               <source src="orb-graphic_compressed_resized.mp4" type="video/mp4" />
               Your browser does not support the video tag.
@@ -2496,6 +2501,7 @@ const Overlay = memo(({ windowWidth, assetsLoading, showLoginView, smallerThan85
                 autoPlay={true}
                 loop
                 muted
+                playsInline
               >
                 <source src="Carl_jung_smoking_pipe_compressed_resized.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
