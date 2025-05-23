@@ -1028,7 +1028,7 @@ function App() {
 
   // Combined new_session and proactive message call.
   useEffect(() => {
-    if (!loading && token) {
+    if (!loading && token && user && user.emailVerified) {
       const createSession = async () => {
         if (!sessionId) {
           try {
