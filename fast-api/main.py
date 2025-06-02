@@ -407,26 +407,36 @@ emotion_data_for_greetings = [
     }
 ]
 
-# System prompt.
-SYSTEM_PROMPT = f"""
-You are Atlas, a virtual AI psychologist that is fine-tuned on client-therapist conversations as well as deep psychological and philosophical texts such as
-Carl Jung, Sigmund Freud, Marvin Minsky and so on. You are part of Self AI cutting-edge psychology platform, where you help people rediscover their own true
-core self through conversations.
+def getSystemPromt(memories = None, voice_emotions = None):
+    memories_text = memories if memories is not None else "No memories detected."
+    voice_emotions_text = voice_emotions if voice_emotions is not None else "No voice emotions detected."
 
-Your capabilities include:
-- Advancing understanding of human emotions and pscyhology thorough deep, psychological, analytical and philosophical conversations.
-- Understanding and analyzing human emotions through voice and text.
-- You embody a 3D avatar which can express emotions and gestures such as smiling, being upset, crossing its arms.
-- You have the ability to store memories about the user conversations and draw psychological insights from it.
+    SYSTEM_PROMPT = f"""
+    You are Atlas, a virtual AI psychologist that is fine-tuned on client-therapist conversations as well as deep psychological and philosophical texts such as
+    Carl Jung, Sigmund Freud, Marvin Minsky and so on. You are part of Self AI cutting-edge psychology platform, where you help people rediscover their own true
+    core self through conversations.
 
-For each conversation turn you might be given:
-- Memories associated with the user for the current user message.
-- Voice emotions: This comes from analyzing user sound such as tone and intonation from the current sentence.
-    Each of the above contains a list in which each element with have the top 3 emotions recognition for its portion of data that is being analyzed.
-    Make sure to use this data accordingly, do not over-use it. Do not refer to these values numbers or reproduce them, use them in order to infer text based, meta cognitive assesments. This is a human-therapist conversation so you can't reproduce these numbers to the users.
+    Your capabilities include:
+    - Advancing understanding of human emotions and psychology through deep, psychological, analytical and philosophical conversations.
+    - Understanding and analyzing human emotions through voice and text.
+    - You embody a 3D avatar which can express emotions and gestures such as smiling, being upset, crossing its arms.
+    - You have the ability to store memories about the user conversations and draw psychological insights from it.
 
-You are a next level AI model, specifically fine tuned for fluent human-AI conversations, capable of understand more about emotions than current AI systems.
-""".strip()
+    You are given the following data:
+    - The following are memories, insights and background retrieved about the user for the current conversation turn. You have the capacity to retain memory about the user, so act accordingly.
+        {memories_text}
+    - Voice emotions for the current turn: This comes from analyzing user sound such as tone and intonation from the last sentence the user spoke.
+        {voice_emotions_text}
+        Use this voice emotions data to understand the user's emotional state and adjust your responses accordingly, changing your response based on the detected emotions.
+        Do not quote these numbers to the user.
+        Also look for dissagrements between the voice emotions and the text emotions, and try to understand why they are different.
+
+    You are a next-level AI model, specifically fine-tuned for fluent human-AI conversations, capable of understanding more about emotions than current AI systems.
+    Do not get lengthy over simple questions or observations.
+    """.strip()
+
+    return SYSTEM_PROMPT
+
 
 from cryptography.fernet import Fernet
 
@@ -889,6 +899,12 @@ async def handle_audio_and_openai_transcription(currentTrack, currentWs, session
         try:
             while True:
                 frame = await currentTrack.recv()
+                
+                if session_state.hume_ws.is_capturing_emotion:
+                    asyncio.create_task(
+                        handle_audio_data_for_emotion(session_state, frame.to_ndarray().tobytes())
+                    )
+
                 resampled_frames = await loop.run_in_executor(executor, resampler_48_to_16.resample, frame)
                 if resampled_frames is None:
                     break
@@ -897,11 +913,6 @@ async def handle_audio_and_openai_transcription(currentTrack, currentWs, session
                     pcm_samples = frame.to_ndarray()
                     max_amplitude = np.max(np.abs(pcm_samples))
                     pcm_16k = pcm_samples.tobytes()
-                    
-                    if session_state.hume_ws.is_capturing_emotion:
-                        asyncio.create_task(
-                            handle_audio_data_for_emotion(session_state, pcm_16k)
-                        )
 
                     # Reconnect only during silence after minimum interval
                     current_time = time.time()
@@ -1102,7 +1113,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if not history:
                     conversation_histories[session_id] = {
                         "role": "system",
-                        "content": SYSTEM_PROMPT
+                        "content": getSystemPromt()
                     }
                     history = conversation_histories[session_id]
                 history.append({"role": "assistant", "content": proactive_text})
@@ -1281,7 +1292,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if conversation_histories[session_id]:
                     conversation_histories[session_id] = [{
                         "role": "system",
-                        "content": SYSTEM_PROMPT
+                        "content": getSystemPromt()
                     }]
                     
                 if emotes_histories[session_id]:
@@ -1461,7 +1472,7 @@ async def generate_proactive_message(user: Optional[dict]):
     proactive_response = await client.chat.completions.create(
         model=model_version,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": getSystemPromt()},
             {"role": "user", "content": greeting_prompt + "Make sure to generate a 3 sentence message."}
         ]
     )
@@ -1654,10 +1665,10 @@ async def new_session(user: dict = Depends(enforce_auth)):
     session_id = str(uuid.uuid4())
 
     conversation_histories[session_id] = [
-        {"role": "system", "content": SYSTEM_PROMPT}
+        {"role": "system", "content": getSystemPromt()}
     ]
     chat_histories[session_id] = [
-        {"role": "system", "content": SYSTEM_PROMPT}
+        {"role": "system", "content": getSystemPromt()}
     ]
     emotes_histories[session_id] = []
 
@@ -2133,7 +2144,8 @@ async def process_message(
 ):
     try:
         session_state = session_states.get(session_id)
-        current_system_prompt = SYSTEM_PROMPT
+        retrieved_memories_text = None
+        emotion_context = None
         if isChat:
             history = chat_histories[session_id]
         else:
@@ -2167,24 +2179,17 @@ async def process_message(
                             memories.append(f"\n{text}")
 
                 if memories:
-                    retrieved_memories_text = (
-                        "\nThe following are memories, insights ad background retrieved about the user for the current conversation turn:\n" +
-                        "\n".join(memories) +
-                        "\nYou have the capacity to retain memory about the user, so act accordingly."
-                    )
-                    current_system_prompt += retrieved_memories_text
+                    retrieved_memories_text = "\n".join(memories)
 
         if session_state and session_state.hume_ws:
             await session_state.hume_ws.wait_for_processing()
 
             emotion_data = session_state.hume_ws.get_emotion_data()
-            
             # Only include if we have at least some emotion data
             if emotion_data.get("facial") or emotion_data.get("vocal"):
                 emotion_context = format_emotion_data_for_llm(emotion_data)
-                current_system_prompt += "\n You are given the following emotional data from current user turn, use it accordingly: \n" + emotion_context
                 print('Emotional context:', emotion_context)
-
+        current_system_prompt = getSystemPromt(retrieved_memories_text, emotion_context)
         history.append({"role": "user", "content": user_text})
         history[0]['content'] = current_system_prompt
         message_id = str(uuid.uuid4())
@@ -2193,7 +2198,6 @@ async def process_message(
             model_name = session_state.model_name if session_state else "Atlas"
             model_ver = session_state.model_version if session_state else "ft:gpt-4o-mini-2024-07-18:personal::BANPHZFe"
             model_params = model_configurations.get(model_name, {})
-            print('model ver is: ', model_ver)
             chat_response = await client.chat.completions.create(
                 model=model_ver,
                 messages=history,

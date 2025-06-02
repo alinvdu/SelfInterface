@@ -24,7 +24,7 @@ class HumeWebSocketHandler:
         
         # Define thresholds for emotions
         self.FACE_EMOTION_THRESHOLD = 0.42
-        self.VOICE_EMOTION_THRESHOLD = 0.25
+        self.VOICE_EMOTION_THRESHOLD = 0.2
         
     def start_emotion_capture(self):
         """Mark the start of emotion capture"""
@@ -145,8 +145,8 @@ class HumeWebSocketHandler:
                     if len(emotions):
                         self.voice_emotions.append(emotions)
                 
-            except websockets.exceptions.ConnectionClosed:
-                self.logger.warning("Hume WebSocket connection closed")
+            except websockets.exceptions.ConnectionClosed as e:
+                self.logger.warning(f"Hume WebSocket connection closed: code={e.code}, reason={e.reason}")
                 self.connected = False
                 break
             
@@ -185,7 +185,7 @@ class HumeWebSocketHandler:
             self.logger.error(f"Error sending face image: {str(e)}")
             return False
         
-    def pcm_to_wav(self, pcm_data, sample_rate=48000, channels=1):
+    def pcm_to_wav(self, pcm_data, sample_rate=48000, channels=2):
         """Convert raw PCM data to WAV format"""
         import io
         import wave
@@ -212,7 +212,6 @@ class HumeWebSocketHandler:
             
             # Encode to base64
             encoded_data = base64.b64encode(wav_data).decode("utf-8")
-
             await self.ws.send(json.dumps({
                 "data": encoded_data,
                 "models": {
