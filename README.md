@@ -2,8 +2,16 @@
 
 ### Welcome to Self AI
 This repository contains the backbone of Self AI platform, offered open sourced without any restrictions in order to advance technological advancement and the benefits of human psychology.
+
 <img width="1728" alt="Screenshot 2025-06-12 at 12 52 45" src="https://github.com/user-attachments/assets/af4199e3-5b2d-46d6-811f-7c43a7adf570" />
 
+### What this project offers
+Check out https://selfai.live to see it live.
+
+### Demonstration
+Check the following links to see demo of this product:
+- Website and platform presentation: https://www.youtube.com/watch?v=3CxksyyeeQg
+- Cinematic presentation: https://www.youtube.com/watch?v=Z4px7rKjtIU
 
 ### What you'll find
 This repository contains:
