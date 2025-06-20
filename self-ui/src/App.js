@@ -202,9 +202,6 @@ function App() {
         // iceTransportPolicy: "relay",
         iceServers: [
           {
-            urls: "stun:stun.relay.metered.ca:80",
-          },
-          {
             urls: "turn:standard.relay.metered.ca:80",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
