@@ -202,22 +202,25 @@ function App() {
         // iceTransportPolicy: "relay",
         iceServers: [
           {
-            urls: "turn:standard.relay.metered.ca:80",
+            urls: "stun:stun.relay.metered.ca:80",
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
           {
-            urls: "turn:standard.relay.metered.ca:80?transport=tcp",
+            urls: "turn:global.relay.metered.ca:80?transport=tcp",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
           {
-            urls: "turn:standard.relay.metered.ca:443",
+            urls: "turn:global.relay.metered.ca:443",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
           {
-            urls: "turns:standard.relay.metered.ca:443?transport=tcp",
+            urls: "turns:global.relay.metered.ca:443?transport=tcp",
             username: process.env.REACT_APP_TURN_SERVER_USERNAME,
             credential: process.env.REACT_APP_TURN_SERVER_CREDENTIAL,
           },
