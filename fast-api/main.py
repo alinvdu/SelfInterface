@@ -787,7 +787,7 @@ async def connect_to_openai_ws():
                 "type": "server_vad",
                 "threshold": 0.5,
                 "prefix_padding_ms": 300,
-                "silence_duration_ms": 1500
+                "silence_duration_ms": 800
             },
             "input_audio_noise_reduction": {
                 "type": "near_field"
